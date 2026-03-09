@@ -12,7 +12,7 @@ from PIL import Image, UnidentifiedImageError
 
 from ..payloads import RETRYABLE_HTTP_STATUS, build_tool_error_result
 
-logger = logging.getLogger("modelscope-image-gen")
+logger = logging.getLogger("modelscope-image-gen-mcp")
 
 
 class ServicePhaseWorkflow:

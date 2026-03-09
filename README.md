@@ -1,6 +1,6 @@
-# ModelScope Image Gen MCP Server
+# modelscope-image-gen-mcp
 
-Modernized Python MCP server for ModelScope async image generation.
+Modern Python MCP server for ModelScope async image generation.
 
 ## Usage
 

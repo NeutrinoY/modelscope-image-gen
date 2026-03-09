@@ -9,7 +9,7 @@ from mcp import types
 
 from ..payloads import RETRYABLE_HTTP_STATUS, build_tool_error_result, build_tool_success_result, parse_retry_after_seconds, stringify_body
 
-logger = logging.getLogger("modelscope-image-gen")
+logger = logging.getLogger("modelscope-image-gen-mcp")
 
 
 class ServiceGenerateWorkflow:

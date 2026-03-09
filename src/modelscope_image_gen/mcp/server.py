@@ -17,9 +17,9 @@ from .tool_metadata import SUPPORTED_TOOL_NAMES, build_tool_list
 
 settings = get_settings()
 logging.basicConfig(level=getattr(logging, settings.modelscope_log_level.upper(), logging.INFO))
-logger = logging.getLogger("modelscope-image-gen")
+logger = logging.getLogger("modelscope-image-gen-mcp")
 
-app = Server("modelscope-image-gen")
+app = Server("modelscope-image-gen-mcp")
 service = ImageGenerationService(settings)
 
 
@@ -107,7 +107,7 @@ async def main() -> None:
             read_stream,
             write_stream,
             InitializationOptions(
-                server_name="modelscope-image-gen",
+                server_name="modelscope-image-gen-mcp",
                 server_version="0.1.0",
                 capabilities=app.get_capabilities(
                     notification_options=NotificationOptions(),

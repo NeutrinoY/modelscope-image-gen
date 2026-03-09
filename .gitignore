@@ -12,4 +12,5 @@ wheels/
 # Runtime artifacts
 out/
 .modelscope-image-gen/
+.modelscope-image-gen-mcp/
 outputs/

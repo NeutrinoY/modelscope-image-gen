@@ -290,7 +290,7 @@ wheels = [
 ]
 
 [[package]]
-name = "modelscope-image-gen"
+name = "modelscope-image-gen-mcp"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

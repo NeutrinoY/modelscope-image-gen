@@ -1,5 +1,5 @@
 [project]
-name = "modelscope-image-gen"
+name = "modelscope-image-gen-mcp"
 version = "0.1.0"
 description = "Modern MCP server for ModelScope image generation"
 readme = "README.md"
@@ -21,7 +21,7 @@ dev = [
 ]
 
 [project.scripts]
-modelscope-image-gen = "modelscope_image_gen.server:cli_main"
+modelscope-image-gen-mcp = "modelscope_image_gen.server:cli_main"
 
 [build-system]
 requires = ["hatchling"]
