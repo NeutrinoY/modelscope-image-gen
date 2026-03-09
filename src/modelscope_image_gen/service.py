@@ -13,6 +13,7 @@ from PIL import Image, UnidentifiedImageError
 
 from .client import ModelScopeClient
 from .config import Settings
+from .task_store import TaskStore
 
 logger = logging.getLogger("modelscope-image-gen")
 
@@ -169,6 +170,7 @@ def build_tool_success_result(message: str, data: dict[str, Any]) -> types.CallT
 class ImageGenerationService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.task_store = TaskStore(state_dir=settings.modelscope_job_state_dir)
         self.client = ModelScopeClient(
             api_base=settings.modelscope_api_base,
             api_key=settings.modelscope_sdk_token,
@@ -176,6 +178,68 @@ class ImageGenerationService:
             poll_timeout_seconds=settings.modelscope_poll_timeout_seconds,
             download_timeout_seconds=settings.modelscope_download_timeout_seconds,
         )
+
+    def _recommended_wait_seconds(self, *, base_interval: float, use_backoff: bool, attempt: int, max_interval: float) -> int:
+        if not use_backoff:
+            return int(base_interval) if base_interval >= 1 else 1
+        wait_value = min(base_interval * (2 ** max(attempt, 0)), max_interval)
+        return int(wait_value) if wait_value >= 1 else 1
+
+    def _build_job_data(self, job: dict[str, Any], *, include_next_action: bool = True) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "job_id": job["job_id"],
+            "state": job.get("state"),
+            "is_terminal": str(job.get("state") or "") in {"succeeded", "failed", "timeout", "canceled"},
+            "provider_status": job.get("provider_status"),
+            "task_id": job.get("task_id"),
+            "request_id": job.get("request_id"),
+            "result_ready": bool(job.get("result_ready", False)),
+            "local_file_ready": bool(job.get("local_file_ready", False)),
+            "recommended_wait_seconds": job.get("recommended_wait_seconds"),
+            "remote_image_url": job.get("remote_image_url"),
+            "output_path": job.get("output_path"),
+            "output_dir": job.get("output_dir"),
+            "output_filename": job.get("output_filename"),
+            "last_error": job.get("last_error"),
+        }
+        if include_next_action:
+            state = str(job.get("state") or "")
+            if state in {"submitted", "in_progress"}:
+                data["next_action"] = {
+                    "tool": "get_image_generation_status",
+                    "arguments": {"job_id": job["job_id"]},
+                }
+            elif state == "succeeded" and not bool(job.get("local_file_ready", False)):
+                data["next_action"] = {
+                    "tool": "get_image_generation_result",
+                    "arguments": {"job_id": job["job_id"]},
+                }
+        return data
+
+    def _load_job_or_error(self, *, job_id: str) -> tuple[dict[str, Any] | None, types.CallToolResult | None]:
+        try:
+            job = self.task_store.load(job_id)
+        except (RuntimeError, ValueError) as exc:
+            return None, build_tool_error_result(
+                "任务状态读取失败",
+                stage="storage",
+                reason_code="JOB_STATE_READ_FAILED",
+                category="local_io",
+                retryable=False,
+                detail=str(exc),
+                suggestion="检查本地任务状态目录权限与文件完整性",
+            )
+        if job is None:
+            return None, build_tool_error_result(
+                "任务不存在",
+                stage="validation",
+                reason_code="JOB_NOT_FOUND",
+                category="validation",
+                retryable=False,
+                detail=f"未找到 job_id={job_id}",
+                suggestion="先调用 submit_image_generation 创建任务",
+            )
+        return job, None
 
     def _resolve_polling_config(
         self,
@@ -295,7 +359,7 @@ class ImageGenerationService:
                     body=poll_data,
                 )
 
-            if task_status not in {"PENDING", "RUNNING"}:
+            if task_status not in {"PENDING", "RUNNING", "PROCESSING"}:
                 return build_tool_error_result(
                     "任务状态异常",
                     stage="poll",
@@ -377,6 +441,430 @@ class ImageGenerationService:
                 retryable=False,
                 detail=str(save_err),
                 suggestion="检查输出目录权限、磁盘空间、文件名是否合法",
+            )
+
+    async def submit_image_generation(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        size: str,
+        output_filename: str,
+        output_dir: str,
+        poll_interval_seconds: float | None,
+        max_poll_attempts: int | None,
+        poll_backoff: bool | None,
+        max_poll_interval_seconds: float | None,
+        negative_prompt: str | None,
+        seed: int | None,
+    ) -> types.CallToolResult:
+        try:
+            self.settings.require_api_key()
+            os.makedirs(output_dir, exist_ok=True)
+
+            base_interval, max_attempts, use_backoff, max_interval = self._resolve_polling_config(
+                poll_interval_seconds=poll_interval_seconds,
+                max_poll_attempts=max_poll_attempts,
+                poll_backoff=poll_backoff,
+                max_poll_interval_seconds=max_poll_interval_seconds,
+            )
+
+            job_id = self.task_store.create_job_id()
+            output_path = os.path.abspath(os.path.join(output_dir, output_filename))
+            job_record: dict[str, Any] = {
+                "job_id": job_id,
+                "state": "submitted",
+                "provider_status": "SUBMITTED",
+                "task_id": None,
+                "request_id": None,
+                "result_ready": False,
+                "local_file_ready": False,
+                "remote_image_url": None,
+                "output_path": output_path,
+                "output_dir": os.path.abspath(output_dir),
+                "output_filename": output_filename,
+                "prompt": prompt,
+                "model": model,
+                "size": size,
+                "negative_prompt": negative_prompt,
+                "seed": seed,
+                "poll": {
+                    "base_interval": base_interval,
+                    "max_attempts": max_attempts,
+                    "use_backoff": use_backoff,
+                    "max_interval": max_interval,
+                    "attempt": 0,
+                },
+                "recommended_wait_seconds": self._recommended_wait_seconds(
+                    base_interval=base_interval,
+                    use_backoff=use_backoff,
+                    attempt=0,
+                    max_interval=max_interval,
+                ),
+                "created_at": self.task_store.now_iso(),
+                "updated_at": self.task_store.now_iso(),
+            }
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                submit_phase = await self._submit_generation_phase(
+                    client,
+                    model=model,
+                    prompt=prompt,
+                    size=size,
+                    negative_prompt=negative_prompt,
+                    seed=seed,
+                )
+            if isinstance(submit_phase, types.CallToolResult):
+                return submit_phase
+
+            task_id, submit_request_id = submit_phase
+            job_record["task_id"] = task_id
+            job_record["request_id"] = submit_request_id
+            job_record["updated_at"] = self.task_store.now_iso()
+            try:
+                self.task_store.save(job_record)
+            except RuntimeError as exc:
+                return build_tool_error_result(
+                    "任务状态保存失败",
+                    stage="storage",
+                    reason_code="JOB_STATE_WRITE_FAILED",
+                    category="local_io",
+                    retryable=False,
+                    detail=str(exc),
+                    suggestion="检查本地任务状态目录权限与磁盘空间",
+                )
+
+            return build_tool_success_result(
+                "任务已提交，可稍后查询状态",
+                data=self._build_job_data(job_record),
+            )
+        except ValueError as err:
+            return build_tool_error_result(
+                "配置错误",
+                stage="validation",
+                reason_code="MISSING_API_KEY",
+                category="validation",
+                retryable=False,
+                detail=str(err),
+                suggestion="设置环境变量 MODELSCOPE_SDK_TOKEN 后重试",
+            )
+        except httpx.HTTPStatusError as http_err:
+            resp = http_err.response
+            status_code = getattr(resp, "status_code", None)
+            request_id = resp.headers.get("X-Request-Id") if resp else None
+            body = _stringify_body(resp)
+            retry_after_seconds = _parse_retry_after_seconds(resp.headers.get("Retry-After") if resp else None)
+            retryable = isinstance(status_code, int) and status_code in _RETRYABLE_HTTP_STATUS
+            return build_tool_error_result(
+                "请求失败",
+                stage="submit",
+                reason_code="SUBMIT_HTTP_ERROR",
+                category="upstream_http",
+                retryable=retryable,
+                retry_after_seconds=retry_after_seconds,
+                status_code=status_code,
+                request_id=request_id,
+                detail="上游接口返回非 2xx 状态码",
+                suggestion="检查请求参数、鉴权令牌、服务可用性，并结合 body 与 request_id 排查",
+                body=body,
+            )
+        except httpx.RequestError as req_err:
+            request_url = str(req_err.request.url) if req_err.request else None
+            return build_tool_error_result(
+                "网络请求异常",
+                stage="submit",
+                reason_code="NETWORK_ERROR",
+                category="network",
+                retryable=True,
+                retry_after_seconds=1,
+                detail=str(req_err),
+                suggestion="检查网络连通性、DNS、代理与 TLS 配置",
+                body=request_url,
+            )
+
+    async def get_image_generation_status(self, *, job_id: str) -> types.CallToolResult:
+        job, load_error = self._load_job_or_error(job_id=job_id)
+        if load_error is not None:
+            return load_error
+        if job is None:
+            return build_tool_error_result(
+                "任务不存在",
+                stage="validation",
+                reason_code="JOB_NOT_FOUND",
+                category="validation",
+                retryable=False,
+                detail=f"未找到 job_id={job_id}",
+                suggestion="先调用 submit_image_generation 创建任务",
+            )
+
+        try:
+            if not job.get("task_id"):
+                return build_tool_error_result(
+                    "任务状态异常",
+                    stage="validation",
+                    reason_code="TASK_ID_MISSING",
+                    category="validation",
+                    retryable=False,
+                    detail=f"job_id={job_id} 未记录 task_id",
+                    suggestion="重新提交任务",
+                )
+
+            state = str(job.get("state", ""))
+            if state in {"succeeded", "failed", "timeout", "canceled"}:
+                return build_tool_success_result("任务状态已就绪", data=self._build_job_data(job))
+
+            self.settings.require_api_key()
+
+            poll_cfg = job.get("poll", {}) if isinstance(job.get("poll"), dict) else {}
+            base_interval = float(poll_cfg.get("base_interval", self.settings.modelscope_poll_interval_seconds))
+            max_attempts = int(poll_cfg.get("max_attempts", self.settings.modelscope_max_poll_attempts))
+            use_backoff = bool(poll_cfg.get("use_backoff", self.settings.modelscope_poll_backoff))
+            max_interval = float(poll_cfg.get("max_interval", self.settings.modelscope_max_poll_interval_seconds))
+            attempt = int(poll_cfg.get("attempt", 0)) + 1
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                poll_response = await self.client.poll_task(client, task_id=str(job["task_id"]))
+
+            poll_data = poll_response.json()
+            task_status = str(poll_data.get("task_status", ""))
+            request_id = poll_response.headers.get("X-Request-Id") or job.get("request_id")
+
+            job["request_id"] = request_id
+            job["provider_status"] = task_status
+            job["poll"] = {
+                "base_interval": base_interval,
+                "max_attempts": max_attempts,
+                "use_backoff": use_backoff,
+                "max_interval": max_interval,
+                "attempt": attempt,
+            }
+            job["recommended_wait_seconds"] = self._recommended_wait_seconds(
+                base_interval=base_interval,
+                use_backoff=use_backoff,
+                attempt=attempt,
+                max_interval=max_interval,
+            )
+
+            if task_status == "SUCCEED":
+                output_images = poll_data.get("output_images", [])
+                if output_images:
+                    job["remote_image_url"] = output_images[0]
+                    job["result_ready"] = True
+                    job["state"] = "succeeded"
+                else:
+                    job["state"] = "failed"
+                    job["last_error"] = _build_error_payload(
+                        stage="poll",
+                        reason_code="EMPTY_OUTPUT_IMAGES",
+                        category="upstream_response",
+                        retryable=False,
+                        request_id=request_id,
+                        detail="task_status=SUCCEED 但 output_images 为空",
+                    )
+            elif task_status == "FAILED":
+                job["state"] = "failed"
+                job["result_ready"] = False
+                job["last_error"] = _build_error_payload(
+                    stage="poll",
+                    reason_code="TASK_FAILED",
+                    category="upstream_task",
+                    retryable=False,
+                    request_id=request_id,
+                    detail=str(poll_data.get("message") or "任务失败"),
+                    body=poll_data,
+                )
+            elif task_status in {"PENDING", "RUNNING", "PROCESSING"}:
+                if attempt >= max_attempts:
+                    job["state"] = "timeout"
+                    job["result_ready"] = False
+                else:
+                    job["state"] = "in_progress"
+            else:
+                job["state"] = "failed"
+                job["result_ready"] = False
+                job["last_error"] = _build_error_payload(
+                    stage="poll",
+                    reason_code="UNKNOWN_TASK_STATUS",
+                    category="upstream_response",
+                    retryable=False,
+                    request_id=request_id,
+                    detail=f"收到未识别的 task_status: {task_status}",
+                    body=poll_data,
+                )
+
+            job["updated_at"] = self.task_store.now_iso()
+            try:
+                self.task_store.save(job)
+            except RuntimeError as exc:
+                return build_tool_error_result(
+                    "任务状态保存失败",
+                    stage="storage",
+                    reason_code="JOB_STATE_WRITE_FAILED",
+                    category="local_io",
+                    retryable=False,
+                    detail=str(exc),
+                    suggestion="检查本地任务状态目录权限与磁盘空间",
+                )
+
+            return build_tool_success_result("任务状态已更新", data=self._build_job_data(job))
+        except ValueError as err:
+            return build_tool_error_result(
+                "配置错误",
+                stage="validation",
+                reason_code="MISSING_API_KEY",
+                category="validation",
+                retryable=False,
+                detail=str(err),
+                suggestion="设置环境变量 MODELSCOPE_SDK_TOKEN 后重试",
+            )
+        except httpx.HTTPStatusError as http_err:
+            resp = http_err.response
+            status_code = getattr(resp, "status_code", None)
+            request_id = resp.headers.get("X-Request-Id") if resp else None
+            body = _stringify_body(resp)
+            retry_after_seconds = _parse_retry_after_seconds(resp.headers.get("Retry-After") if resp else None)
+            retryable = isinstance(status_code, int) and status_code in _RETRYABLE_HTTP_STATUS
+            return build_tool_error_result(
+                "请求失败",
+                stage="poll",
+                reason_code="POLL_HTTP_ERROR",
+                category="upstream_http",
+                retryable=retryable,
+                retry_after_seconds=retry_after_seconds,
+                status_code=status_code,
+                request_id=request_id,
+                detail="任务状态查询失败",
+                suggestion="稍后重试状态查询",
+                body=body,
+            )
+        except httpx.RequestError as req_err:
+            request_url = str(req_err.request.url) if req_err.request else None
+            return build_tool_error_result(
+                "网络请求异常",
+                stage="poll",
+                reason_code="NETWORK_ERROR",
+                category="network",
+                retryable=True,
+                retry_after_seconds=1,
+                detail=str(req_err),
+                suggestion="检查网络连通性、DNS、代理与 TLS 配置",
+                body=request_url,
+            )
+
+    async def get_image_generation_result(self, *, job_id: str) -> types.CallToolResult:
+        job, load_error = self._load_job_or_error(job_id=job_id)
+        if load_error is not None:
+            return load_error
+        if job is None:
+            return build_tool_error_result(
+                "任务不存在",
+                stage="validation",
+                reason_code="JOB_NOT_FOUND",
+                category="validation",
+                retryable=False,
+                detail=f"未找到 job_id={job_id}",
+                suggestion="先调用 submit_image_generation 创建任务",
+            )
+
+        try:
+            if bool(job.get("local_file_ready", False)) and os.path.exists(str(job.get("output_path", ""))):
+                return build_tool_success_result("图片结果已就绪", data=self._build_job_data(job))
+
+            if not bool(job.get("result_ready", False)) or not job.get("remote_image_url"):
+                return build_tool_error_result(
+                    "结果尚未就绪",
+                    stage="result",
+                    reason_code="RESULT_NOT_READY",
+                    category="state",
+                    retryable=True,
+                    retry_after_seconds=job.get("recommended_wait_seconds"),
+                    detail=f"job_id={job_id} 当前状态为 {job.get('state')}",
+                    suggestion="先调用 get_image_generation_status 轮询任务状态",
+                    body={
+                        "job_id": job_id,
+                        "next_action": {
+                            "tool": "get_image_generation_status",
+                            "arguments": {"job_id": job_id},
+                        },
+                    },
+                )
+
+            self.settings.require_api_key()
+
+            output_dir = str(job.get("output_dir") or "")
+            output_path = str(job.get("output_path") or "")
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                decode_phase = await self._download_decode_phase(client, image_url=str(job["remote_image_url"]))
+            if isinstance(decode_phase, types.CallToolResult):
+                return decode_phase
+            image, _ = decode_phase
+
+            save_error = self._save_image_phase(image=image, output_path=output_path)
+            if save_error is not None:
+                return save_error
+
+            job["state"] = "succeeded"
+            job["local_file_ready"] = True
+            job["updated_at"] = self.task_store.now_iso()
+            try:
+                self.task_store.save(job)
+            except RuntimeError as exc:
+                return build_tool_error_result(
+                    "任务状态保存失败",
+                    stage="storage",
+                    reason_code="JOB_STATE_WRITE_FAILED",
+                    category="local_io",
+                    retryable=False,
+                    detail=str(exc),
+                    suggestion="检查本地任务状态目录权限与磁盘空间",
+                )
+
+            return build_tool_success_result("图片结果已保存", data=self._build_job_data(job))
+        except ValueError as err:
+            return build_tool_error_result(
+                "配置错误",
+                stage="validation",
+                reason_code="MISSING_API_KEY",
+                category="validation",
+                retryable=False,
+                detail=str(err),
+                suggestion="设置环境变量 MODELSCOPE_SDK_TOKEN 后重试",
+            )
+        except httpx.HTTPStatusError as http_err:
+            resp = http_err.response
+            status_code = getattr(resp, "status_code", None)
+            request_id = resp.headers.get("X-Request-Id") if resp else None
+            body = _stringify_body(resp)
+            retry_after_seconds = _parse_retry_after_seconds(resp.headers.get("Retry-After") if resp else None)
+            retryable = isinstance(status_code, int) and status_code in _RETRYABLE_HTTP_STATUS
+            return build_tool_error_result(
+                "请求失败",
+                stage="download",
+                reason_code="DOWNLOAD_HTTP_ERROR",
+                category="upstream_http",
+                retryable=retryable,
+                retry_after_seconds=retry_after_seconds,
+                status_code=status_code,
+                request_id=request_id,
+                detail="图片下载失败",
+                suggestion="稍后重试获取结果",
+                body=body,
+            )
+        except httpx.RequestError as req_err:
+            request_url = str(req_err.request.url) if req_err.request else None
+            return build_tool_error_result(
+                "网络请求异常",
+                stage="download",
+                reason_code="NETWORK_ERROR",
+                category="network",
+                retryable=True,
+                retry_after_seconds=1,
+                detail=str(req_err),
+                suggestion="检查网络连通性、DNS、代理与 TLS 配置",
+                body=request_url,
             )
 
     async def generate_image(

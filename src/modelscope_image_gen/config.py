@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     modelscope_submit_timeout_seconds: float = Field(default=30, validation_alias="MODELSCOPE_SUBMIT_TIMEOUT_SECONDS")
     modelscope_poll_timeout_seconds: float = Field(default=30, validation_alias="MODELSCOPE_POLL_TIMEOUT_SECONDS")
     modelscope_download_timeout_seconds: float = Field(default=60, validation_alias="MODELSCOPE_DOWNLOAD_TIMEOUT_SECONDS")
+    modelscope_job_state_dir: str = Field(
+        default="./.modelscope-image-gen/jobs",
+        validation_alias="MODELSCOPE_JOB_STATE_DIR",
+    )
 
     def polling_defaults(self) -> dict[str, float | int | bool]:
         return {
