@@ -7,9 +7,20 @@ import httpx
 
 
 class ModelScopeClient:
-    def __init__(self, *, api_base: str, api_key: str) -> None:
+    def __init__(
+        self,
+        *,
+        api_base: str,
+        api_key: str,
+        submit_timeout_seconds: float = 30.0,
+        poll_timeout_seconds: float = 30.0,
+        download_timeout_seconds: float = 60.0,
+    ) -> None:
         self.api_base = api_base.rstrip("/") + "/"
         self.api_key = api_key
+        self.submit_timeout_seconds = submit_timeout_seconds
+        self.poll_timeout_seconds = poll_timeout_seconds
+        self.download_timeout_seconds = download_timeout_seconds
 
     def _submit_headers(self) -> dict[str, str]:
         return {
@@ -49,6 +60,7 @@ class ModelScopeClient:
             f"{self.api_base}v1/images/generations",
             headers=self._submit_headers(),
             content=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            timeout=self.submit_timeout_seconds,
         )
         response.raise_for_status()
         return response
@@ -62,11 +74,12 @@ class ModelScopeClient:
         response = await client.get(
             f"{self.api_base}v1/tasks/{task_id}",
             headers=self._poll_headers(),
+            timeout=self.poll_timeout_seconds,
         )
         response.raise_for_status()
         return response
 
     async def download_image(self, client: httpx.AsyncClient, *, image_url: str) -> httpx.Response:
-        response = await client.get(image_url)
+        response = await client.get(image_url, timeout=self.download_timeout_seconds)
         response.raise_for_status()
         return response

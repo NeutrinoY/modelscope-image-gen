@@ -3,12 +3,14 @@ from __future__ import annotations
 # pyright: reportMissingImports=false
 import asyncio
 import logging
+import re
 from typing import Any
 
 from mcp import types
 from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
+from pydantic import BaseModel, Field, ValidationError
 
 from .config import get_settings
 from .service import ImageGenerationService, build_tool_error_result
@@ -19,6 +21,43 @@ logger = logging.getLogger("modelscope-image-gen")
 
 app = Server("modelscope-image-gen")
 service = ImageGenerationService(settings)
+
+_SIZE_PATTERN = re.compile(r"^(\d+)x(\d+)$")
+
+
+class GenerateImageArgs(BaseModel):
+    prompt: str = Field(min_length=1)
+    model: str = Field(default=settings.default_model, min_length=1)
+    size: str = Field(default="1024x1024")
+    output_filename: str = Field(default="result_image.jpg", min_length=1)
+    output_dir: str = Field(default="./outputs", min_length=1)
+    poll_interval_seconds: float | None = Field(default=None, ge=0)
+    max_poll_attempts: int | None = Field(default=None, ge=1)
+    poll_backoff: bool | None = None
+    max_poll_interval_seconds: float | None = Field(default=None, ge=0)
+    negative_prompt: str | None = None
+    seed: int | None = None
+
+
+def _normalize_size(value: str) -> str:
+    match = _SIZE_PATTERN.fullmatch(value.strip())
+    if match is None:
+        raise ValueError("size must follow WIDTHxHEIGHT, e.g. 1024x1024")
+    width = int(match.group(1))
+    height = int(match.group(2))
+    if width < 64 or width > 1664 or height < 64 or height > 1664:
+        raise ValueError("size width/height must be between 64 and 1664")
+    return f"{width}x{height}"
+
+
+def _validation_error_detail(exc: ValidationError) -> str:
+    lines: list[str] = []
+    for item in exc.errors():
+        loc_raw = item.get("loc", ())
+        loc = ".".join(str(part) for part in loc_raw) if loc_raw else "arguments"
+        msg = str(item.get("msg", "invalid value"))
+        lines.append(f"{loc}: {msg}")
+    return "; ".join(lines)
 
 
 @app.list_tools()
@@ -99,7 +138,49 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> types
         )
 
     args = arguments or {}
-    if "prompt" not in args or not args["prompt"]:
+    try:
+        parsed_args = GenerateImageArgs.model_validate(args)
+    except ValidationError as exc:
+        has_missing_prompt = any(item.get("type") == "missing" and item.get("loc") == ("prompt",) for item in exc.errors())
+        if has_missing_prompt:
+            return build_tool_error_result(
+                "参数校验失败",
+                stage="validation",
+                reason_code="MISSING_REQUIRED_ARGUMENT",
+                category="validation",
+                retryable=False,
+                detail="缺少必填参数 prompt",
+                suggestion="传入非空字符串 prompt 后重试",
+            )
+
+        return build_tool_error_result(
+            "参数校验失败",
+            stage="validation",
+            reason_code="ARGUMENT_VALIDATION_FAILED",
+            category="validation",
+            retryable=False,
+            detail=_validation_error_detail(exc),
+            suggestion="检查参数类型与取值范围后重试",
+        )
+
+    try:
+        prompt = parsed_args.prompt.strip()
+        model = parsed_args.model.strip()
+        output_filename = parsed_args.output_filename.strip()
+        output_dir = parsed_args.output_dir.strip()
+        size = _normalize_size(parsed_args.size)
+    except ValueError as exc:
+        return build_tool_error_result(
+            "参数校验失败",
+            stage="validation",
+            reason_code="ARGUMENT_VALIDATION_FAILED",
+            category="validation",
+            retryable=False,
+            detail=str(exc),
+            suggestion="检查参数类型与取值范围后重试",
+        )
+
+    if not prompt:
         return build_tool_error_result(
             "参数校验失败",
             stage="validation",
@@ -110,18 +191,29 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> types
             suggestion="传入非空字符串 prompt 后重试",
         )
 
+    if not model or not output_filename or not output_dir:
+        return build_tool_error_result(
+            "参数校验失败",
+            stage="validation",
+            reason_code="ARGUMENT_VALIDATION_FAILED",
+            category="validation",
+            retryable=False,
+            detail="model/output_filename/output_dir 必须为非空字符串",
+            suggestion="检查参数类型与取值范围后重试",
+        )
+
     return await service.generate_image(
-        prompt=args["prompt"],
-        model=args.get("model", settings.default_model),
-        size=args.get("size", "1024x1024"),
-        output_filename=args.get("output_filename", "result_image.jpg"),
-        output_dir=args.get("output_dir", "./outputs"),
-        poll_interval_seconds=args.get("poll_interval_seconds"),
-        max_poll_attempts=args.get("max_poll_attempts"),
-        poll_backoff=args.get("poll_backoff"),
-        max_poll_interval_seconds=args.get("max_poll_interval_seconds"),
-        negative_prompt=args.get("negative_prompt"),
-        seed=args.get("seed"),
+        prompt=prompt,
+        model=model,
+        size=size,
+        output_filename=output_filename,
+        output_dir=output_dir,
+        poll_interval_seconds=parsed_args.poll_interval_seconds,
+        max_poll_attempts=parsed_args.max_poll_attempts,
+        poll_backoff=parsed_args.poll_backoff,
+        max_poll_interval_seconds=parsed_args.max_poll_interval_seconds,
+        negative_prompt=parsed_args.negative_prompt,
+        seed=parsed_args.seed,
     )
 
 

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
         default=30,
         validation_alias="MODELSCOPE_MAX_POLL_INTERVAL_SECONDS",
     )
+    modelscope_submit_timeout_seconds: float = Field(default=30, validation_alias="MODELSCOPE_SUBMIT_TIMEOUT_SECONDS")
+    modelscope_poll_timeout_seconds: float = Field(default=30, validation_alias="MODELSCOPE_POLL_TIMEOUT_SECONDS")
+    modelscope_download_timeout_seconds: float = Field(default=60, validation_alias="MODELSCOPE_DOWNLOAD_TIMEOUT_SECONDS")
 
     def polling_defaults(self) -> dict[str, float | int | bool]:
         return {

@@ -3,7 +3,7 @@ name = "modelscope-image-gen"
 version = "0.1.0"
 description = "Modern MCP server for ModelScope image generation"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "mcp>=1.0.0",
     "httpx>=0.27.0",
@@ -32,7 +32,7 @@ packages = ["src/modelscope_image_gen"]
 
 [tool.ruff]
 line-length = 140
-target-version = "py314"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N"]
