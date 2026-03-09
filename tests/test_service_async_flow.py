@@ -50,7 +50,9 @@ async def test_submit_status_result_flow(monkeypatch, tmp_path) -> None:
         )
     )
 
-    monkeypatch.setattr("modelscope_image_gen.service.httpx.AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr("modelscope_image_gen.services.workflows.submit.httpx.AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr("modelscope_image_gen.services.workflows.status.httpx.AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr("modelscope_image_gen.services.workflows.result.httpx.AsyncClient", DummyAsyncClient)
 
     async def fake_submit(client, **kwargs):
         return FakeResponse(
@@ -93,12 +95,14 @@ async def test_submit_status_result_flow(monkeypatch, tmp_path) -> None:
     )
 
     assert submit_result.isError is False
+    assert submit_result.structuredContent is not None
     submit_data = submit_result.structuredContent["data"]
     job_id = submit_data["job_id"]
     assert submit_data["task_id"] == "task-async-1"
 
     status_result = await service.get_image_generation_status(job_id=job_id)
     assert status_result.isError is False
+    assert status_result.structuredContent is not None
     status_data = status_result.structuredContent["data"]
     assert status_data["state"] == "succeeded"
     assert status_data["result_ready"] is True
@@ -106,6 +110,7 @@ async def test_submit_status_result_flow(monkeypatch, tmp_path) -> None:
 
     result_result = await service.get_image_generation_result(job_id=job_id)
     assert result_result.isError is False
+    assert result_result.structuredContent is not None
     result_data = result_result.structuredContent["data"]
     assert result_data["state"] == "succeeded"
     assert result_data["output_filename"] == "async.png"
@@ -120,7 +125,7 @@ async def test_get_result_before_ready_returns_result_not_ready(monkeypatch, tmp
         )
     )
 
-    monkeypatch.setattr("modelscope_image_gen.service.httpx.AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr("modelscope_image_gen.services.workflows.submit.httpx.AsyncClient", DummyAsyncClient)
 
     async def fake_submit(client, **kwargs):
         return FakeResponse(
@@ -145,9 +150,115 @@ async def test_get_result_before_ready_returns_result_not_ready(monkeypatch, tmp
         seed=None,
     )
 
+    assert submit_result.structuredContent is not None
     job_id = submit_result.structuredContent["data"]["job_id"]
     result_result = await service.get_image_generation_result(job_id=job_id)
 
     assert result_result.isError is True
+    assert result_result.structuredContent is not None
     err = result_result.structuredContent["error"]
     assert err["reason_code"] == "RESULT_NOT_READY"
+
+
+@pytest.mark.asyncio
+async def test_status_failed_preserves_retry_metadata(monkeypatch, tmp_path) -> None:
+    service = ImageGenerationService(
+        Settings(
+            modelscope_sdk_token="token",
+            modelscope_job_state_dir=str(tmp_path / "jobs"),
+        )
+    )
+
+    monkeypatch.setattr("modelscope_image_gen.services.workflows.submit.httpx.AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr("modelscope_image_gen.services.workflows.status.httpx.AsyncClient", DummyAsyncClient)
+
+    async def fake_submit(client, **kwargs):
+        return FakeResponse(status_code=200, headers={"X-Request-Id": "req-submit"}, json_data={"task_id": "task-async-fail"})
+
+    async def fake_poll(client, *, task_id):
+        return FakeResponse(
+            status_code=200,
+            headers={"X-Request-Id": "req-poll"},
+            json_data={"task_status": "FAILED", "message": "rate limited", "code": 429},
+        )
+
+    monkeypatch.setattr(service.client, "submit_generation", AsyncMock(side_effect=fake_submit))
+    monkeypatch.setattr(service.client, "poll_task", AsyncMock(side_effect=fake_poll))
+
+    submit_result = await service.submit_image_generation(
+        prompt="cat",
+        model="Qwen/Qwen-Image",
+        size="1024x1024",
+        output_filename="async.png",
+        output_dir=str(tmp_path / "outputs"),
+        poll_interval_seconds=1,
+        max_poll_attempts=3,
+        poll_backoff=False,
+        max_poll_interval_seconds=5,
+        negative_prompt=None,
+        seed=None,
+    )
+
+    assert submit_result.structuredContent is not None
+    job_id = submit_result.structuredContent["data"]["job_id"]
+
+    status_result = await service.get_image_generation_status(job_id=job_id)
+    assert status_result.isError is False
+    assert status_result.structuredContent is not None
+    data = status_result.structuredContent["data"]
+    assert data["state"] == "failed"
+    assert data["last_error"]["reason_code"] == "TASK_FAILED"
+    assert data["last_error"]["retryable"] is True
+    assert data["last_error"]["retry_after_seconds"] == 1
+    assert data["last_error"]["status_code"] == 429
+
+
+@pytest.mark.asyncio
+async def test_result_returns_terminal_error_payload(monkeypatch, tmp_path) -> None:
+    service = ImageGenerationService(
+        Settings(
+            modelscope_sdk_token="token",
+            modelscope_job_state_dir=str(tmp_path / "jobs"),
+        )
+    )
+
+    monkeypatch.setattr("modelscope_image_gen.services.workflows.submit.httpx.AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr("modelscope_image_gen.services.workflows.status.httpx.AsyncClient", DummyAsyncClient)
+
+    async def fake_submit(client, **kwargs):
+        return FakeResponse(status_code=200, headers={"X-Request-Id": "req-submit"}, json_data={"task_id": "task-async-timeout"})
+
+    async def fake_poll(client, *, task_id):
+        return FakeResponse(status_code=200, headers={"X-Request-Id": "req-poll"}, json_data={"task_status": "RUNNING"})
+
+    monkeypatch.setattr(service.client, "submit_generation", AsyncMock(side_effect=fake_submit))
+    monkeypatch.setattr(service.client, "poll_task", AsyncMock(side_effect=fake_poll))
+
+    submit_result = await service.submit_image_generation(
+        prompt="cat",
+        model="Qwen/Qwen-Image",
+        size="1024x1024",
+        output_filename="async.png",
+        output_dir=str(tmp_path / "outputs"),
+        poll_interval_seconds=1,
+        max_poll_attempts=1,
+        poll_backoff=False,
+        max_poll_interval_seconds=5,
+        negative_prompt=None,
+        seed=None,
+    )
+
+    assert submit_result.structuredContent is not None
+    job_id = submit_result.structuredContent["data"]["job_id"]
+
+    status_result = await service.get_image_generation_status(job_id=job_id)
+    assert status_result.structuredContent is not None
+    assert status_result.structuredContent["data"]["state"] == "timeout"
+
+    result_result = await service.get_image_generation_result(job_id=job_id)
+    assert result_result.isError is True
+    assert result_result.structuredContent is not None
+    err = result_result.structuredContent["error"]
+    assert err["reason_code"] == "POLL_TIMEOUT"
+    assert err["category"] == "timeout"
+    assert err["retryable"] is True
