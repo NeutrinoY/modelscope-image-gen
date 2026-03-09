@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     def require_api_key(self) -> str:
         if not self.modelscope_sdk_token:
-            raise ValueError("需要设置 MODELSCOPE_SDK_TOKEN 环境变量")
+            raise ValueError("MODELSCOPE_SDK_TOKEN environment variable is required")
         return self.modelscope_sdk_token
 
 

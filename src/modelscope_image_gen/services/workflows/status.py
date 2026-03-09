@@ -21,30 +21,30 @@ class ServiceStatusWorkflow:
             return load_error
         if job is None:
             return build_tool_error_result(
-                "任务不存在",
+                "Job not found",
                 stage="validation",
                 reason_code="JOB_NOT_FOUND",
                 category="validation",
                 retryable=False,
-                detail=f"未找到 job_id={job_id}",
-                suggestion="先调用 submit_image_generation 创建任务",
+                detail=f"No job found for job_id={job_id}",
+                suggestion="Create a job first via submit_image_generation",
             )
 
         try:
             if not job.get("task_id"):
                 return build_tool_error_result(
-                    "任务状态异常",
+                    "Job state is invalid",
                     stage="validation",
                     reason_code="TASK_ID_MISSING",
                     category="validation",
                     retryable=False,
-                    detail=f"job_id={job_id} 未记录 task_id",
-                    suggestion="重新提交任务",
+                    detail=f"job_id={job_id} does not contain task_id",
+                    suggestion="Resubmit the generation request",
                 )
 
             state = str(job.get("state", ""))
             if state in {"succeeded", "failed", "timeout", "canceled"}:
-                return build_tool_success_result("任务状态已就绪", data=self._build_job_data(job))
+                return build_tool_success_result("Job status retrieved", data=self._build_job_data(job))
 
             self.settings.require_api_key()
 
@@ -93,8 +93,8 @@ class ServiceStatusWorkflow:
                         category="upstream_response",
                         retryable=False,
                         request_id=request_id,
-                        detail="task_status=SUCCEED 但 output_images 为空",
-                        suggestion="检查模型输出内容与服务端返回格式",
+                        detail="task_status=SUCCEED but output_images is empty",
+                        suggestion="Check model output and upstream response format",
                         body=poll_data,
                     )
             elif task_status == "FAILED":
@@ -110,8 +110,8 @@ class ServiceStatusWorkflow:
                     retry_after_seconds=1 if retryable else None,
                     status_code=status_code if isinstance(status_code, int) else None,
                     request_id=request_id,
-                    detail=str(poll_data.get("message") or "任务失败"),
-                    suggestion="根据 body 中的服务端错误信息调整提示词、模型或请求参数",
+                    detail=str(poll_data.get("message") or "Task failed"),
+                    suggestion="Adjust prompt, model, or request arguments based on upstream error details in body",
                     body=poll_data,
                 )
             elif task_status in {"PENDING", "RUNNING", "PROCESSING"}:
@@ -124,8 +124,8 @@ class ServiceStatusWorkflow:
                         category="timeout",
                         retryable=True,
                         retry_after_seconds=int(base_interval) if base_interval >= 1 else 1,
-                        detail=(f"达到最大轮询次数仍未完成: max_attempts={max_attempts}, base_interval={base_interval}, backoff={use_backoff}, max_interval={max_interval}"),
-                        suggestion="适当提高 max_poll_attempts 或检查服务端任务排队情况",
+                        detail=(f"Task did not complete before max polling attempts: max_attempts={max_attempts}, base_interval={base_interval}, backoff={use_backoff}, max_interval={max_interval}"),
+                        suggestion="Increase max_poll_attempts or check upstream queue/backlog status",
                     )
                 else:
                     job["state"] = "in_progress"
@@ -139,8 +139,8 @@ class ServiceStatusWorkflow:
                     retryable=False,
                     status_code=poll_response.status_code,
                     request_id=request_id,
-                    detail=f"收到未识别的 task_status: {task_status}",
-                    suggestion="检查 API 版本是否变化，或任务状态字段是否发生兼容性变更",
+                    detail=f"Received unrecognized task_status: {task_status}",
+                    suggestion="Check for API version changes or task-status field compatibility changes",
                     body=poll_data,
                 )
 
@@ -149,25 +149,25 @@ class ServiceStatusWorkflow:
                 self.task_store.save(job)
             except RuntimeError as exc:
                 return build_tool_error_result(
-                    "任务状态保存失败",
+                    "Failed to persist job state",
                     stage="storage",
                     reason_code="JOB_STATE_WRITE_FAILED",
                     category="local_io",
                     retryable=False,
                     detail=str(exc),
-                    suggestion="检查本地任务状态目录权限与磁盘空间",
+                    suggestion="Check local job-state directory permissions and available disk space",
                 )
 
-            return build_tool_success_result("任务状态已更新", data=self._build_job_data(job))
+            return build_tool_success_result("Job status updated", data=self._build_job_data(job))
         except ValueError as err:
             return build_tool_error_result(
-                "配置错误",
+                "Configuration error",
                 stage="validation",
                 reason_code="MISSING_API_KEY",
                 category="validation",
                 retryable=False,
                 detail=str(err),
-                suggestion="设置环境变量 MODELSCOPE_SDK_TOKEN 后重试",
+                suggestion="Set MODELSCOPE_SDK_TOKEN and try again",
             )
         except httpx.HTTPStatusError as http_err:
             resp = http_err.response
@@ -177,7 +177,7 @@ class ServiceStatusWorkflow:
             retry_after_seconds = parse_retry_after_seconds(resp.headers.get("Retry-After") if resp else None)
             retryable = isinstance(status_code, int) and status_code in RETRYABLE_HTTP_STATUS
             return build_tool_error_result(
-                "请求失败",
+                "Request failed",
                 stage="poll",
                 reason_code="POLL_HTTP_ERROR",
                 category="upstream_http",
@@ -185,20 +185,20 @@ class ServiceStatusWorkflow:
                 retry_after_seconds=retry_after_seconds,
                 status_code=status_code,
                 request_id=request_id,
-                detail="任务状态查询失败",
-                suggestion="稍后重试状态查询",
+                detail="Failed to query task status",
+                suggestion="Retry status query later",
                 body=body,
             )
         except httpx.RequestError as req_err:
             request_url = str(req_err.request.url) if req_err.request else None
             return build_tool_error_result(
-                "网络请求异常",
+                "Network request error",
                 stage="poll",
                 reason_code="NETWORK_ERROR",
                 category="network",
                 retryable=True,
                 retry_after_seconds=1,
                 detail=str(req_err),
-                suggestion="检查网络连通性、DNS、代理与 TLS 配置",
+                suggestion="Check network connectivity, DNS, proxy, and TLS settings",
                 body=request_url,
             )

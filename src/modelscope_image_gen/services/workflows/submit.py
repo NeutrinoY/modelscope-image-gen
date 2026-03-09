@@ -92,25 +92,25 @@ class ServiceSubmitWorkflow:
                 self.task_store.save(job_record)
             except RuntimeError as exc:
                 return build_tool_error_result(
-                    "任务状态保存失败",
+                    "Failed to persist job state",
                     stage="storage",
                     reason_code="JOB_STATE_WRITE_FAILED",
                     category="local_io",
                     retryable=False,
                     detail=str(exc),
-                    suggestion="检查本地任务状态目录权限与磁盘空间",
+                    suggestion="Check local job-state directory permissions and available disk space",
                 )
 
-            return build_tool_success_result("任务已提交，可稍后查询状态", data=self._build_job_data(job_record))
+            return build_tool_success_result("Job submitted. You can check status later.", data=self._build_job_data(job_record))
         except ValueError as err:
             return build_tool_error_result(
-                "配置错误",
+                "Configuration error",
                 stage="validation",
                 reason_code="MISSING_API_KEY",
                 category="validation",
                 retryable=False,
                 detail=str(err),
-                suggestion="设置环境变量 MODELSCOPE_SDK_TOKEN 后重试",
+                suggestion="Set MODELSCOPE_SDK_TOKEN and try again",
             )
         except httpx.HTTPStatusError as http_err:
             resp = http_err.response
@@ -120,7 +120,7 @@ class ServiceSubmitWorkflow:
             retry_after_seconds = parse_retry_after_seconds(resp.headers.get("Retry-After") if resp else None)
             retryable = isinstance(status_code, int) and status_code in RETRYABLE_HTTP_STATUS
             return build_tool_error_result(
-                "请求失败",
+                "Request failed",
                 stage="submit",
                 reason_code="SUBMIT_HTTP_ERROR",
                 category="upstream_http",
@@ -128,20 +128,20 @@ class ServiceSubmitWorkflow:
                 retry_after_seconds=retry_after_seconds,
                 status_code=status_code,
                 request_id=request_id,
-                detail="上游接口返回非 2xx 状态码",
-                suggestion="检查请求参数、鉴权令牌、服务可用性，并结合 body 与 request_id 排查",
+                detail="Upstream API returned a non-2xx status code",
+                suggestion="Check request arguments, auth token, service availability, and use body/request_id for troubleshooting",
                 body=body,
             )
         except httpx.RequestError as req_err:
             request_url = str(req_err.request.url) if req_err.request else None
             return build_tool_error_result(
-                "网络请求异常",
+                "Network request error",
                 stage="submit",
                 reason_code="NETWORK_ERROR",
                 category="network",
                 retryable=True,
                 retry_after_seconds=1,
                 detail=str(req_err),
-                suggestion="检查网络连通性、DNS、代理与 TLS 配置",
+                suggestion="Check network connectivity, DNS, proxy, and TLS settings",
                 body=request_url,
             )

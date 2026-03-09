@@ -38,7 +38,7 @@ class ServiceGenerateWorkflow:
                 poll_backoff=poll_backoff,
                 max_poll_interval_seconds=max_poll_interval_seconds,
             )
-            logger.info("正在使用模型 %s 生成图片，提示词: %s", model, prompt)
+            logger.info("Generating image with model %s, prompt: %s", model, prompt)
 
             async with httpx.AsyncClient(timeout=60.0) as client:
                 submit_phase = await self._submit_generation_phase(
@@ -76,15 +76,15 @@ class ServiceGenerateWorkflow:
                     return save_error
 
                 message = (
-                    "图片生成成功！\n"
-                    f"提示词: {prompt}\n"
-                    f"模型: {model}\n"
-                    f"分辨率: {size}\n"
-                    f"保存路径: {os.path.abspath(output_path)}\n"
-                    f"输出目录: {os.path.abspath(output_dir)}\n"
-                    f"文件名: {output_filename}\n"
-                    f"图片URL: {image_url}\n"
-                    f"request_id: {poll_request_id or submit_request_id}"
+                    "Image generated successfully.\n"
+                    f"Prompt: {prompt}\n"
+                    f"Model: {model}\n"
+                    f"Resolution: {size}\n"
+                    f"Saved path: {os.path.abspath(output_path)}\n"
+                    f"Output directory: {os.path.abspath(output_dir)}\n"
+                    f"Filename: {output_filename}\n"
+                    f"Image URL: {image_url}\n"
+                    f"Request ID: {poll_request_id or submit_request_id}"
                 )
                 return build_tool_success_result(
                     message,
@@ -101,13 +101,13 @@ class ServiceGenerateWorkflow:
                 )
         except ValueError as err:
             return build_tool_error_result(
-                "配置错误",
+                "Configuration error",
                 stage="validation",
                 reason_code="MISSING_API_KEY",
                 category="validation",
                 retryable=False,
                 detail=str(err),
-                suggestion="设置环境变量 MODELSCOPE_SDK_TOKEN 后重试",
+                suggestion="Set MODELSCOPE_SDK_TOKEN and try again",
             )
         except httpx.HTTPStatusError as http_err:
             resp = http_err.response
@@ -132,7 +132,7 @@ class ServiceGenerateWorkflow:
 
             retryable = isinstance(status_code, int) and status_code in RETRYABLE_HTTP_STATUS
             return build_tool_error_result(
-                "请求失败",
+                "Request failed",
                 stage=stage,
                 reason_code=reason_code,
                 category="upstream_http",
@@ -140,30 +140,30 @@ class ServiceGenerateWorkflow:
                 retry_after_seconds=retry_after_seconds,
                 status_code=status_code,
                 request_id=request_id,
-                detail="上游接口返回非 2xx 状态码",
-                suggestion="检查请求参数、鉴权令牌、服务可用性，并结合 body 与 request_id 排查",
+                detail="Upstream API returned a non-2xx status code",
+                suggestion="Check request arguments, auth token, service availability, and use body/request_id for troubleshooting",
                 body=body,
             )
         except httpx.RequestError as req_err:
             request_url = str(req_err.request.url) if req_err.request else None
             return build_tool_error_result(
-                "网络请求异常",
+                "Network request error",
                 stage="request",
                 reason_code="NETWORK_ERROR",
                 category="network",
                 retryable=True,
                 retry_after_seconds=1,
                 detail=str(req_err),
-                suggestion="检查网络连通性、DNS、代理与 TLS 配置",
+                suggestion="Check network connectivity, DNS, proxy, and TLS settings",
                 body=request_url,
             )
         except Exception as err:  # noqa: BLE001
             return build_tool_error_result(
-                "生成图片时发生错误",
+                "Image generation encountered an unexpected error",
                 stage="unexpected",
                 reason_code="UNEXPECTED_ERROR",
                 category="internal",
                 retryable=False,
                 detail=str(err),
-                suggestion="查看服务端日志并携带请求参数进行复现",
+                suggestion="Inspect server logs and reproduce with the same request arguments",
             )

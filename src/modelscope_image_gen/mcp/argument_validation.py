@@ -72,25 +72,25 @@ def validate_job_id_args(args: dict[str, Any]) -> tuple[str | None, types.CallTo
         parsed_job_args = JobIdArgs.model_validate(args)
     except ValidationError as exc:
         return None, build_tool_error_result(
-            "参数校验失败",
+            "Argument validation failed",
             stage="validation",
             reason_code="ARGUMENT_VALIDATION_FAILED",
             category="validation",
             retryable=False,
             detail=_validation_error_detail(exc),
-            suggestion="传入非空字符串 job_id 后重试",
+            suggestion="Provide a non-empty job_id and try again",
         )
 
     job_id = parsed_job_args.job_id.strip()
     if not job_id:
         return None, build_tool_error_result(
-            "参数校验失败",
+            "Argument validation failed",
             stage="validation",
             reason_code="MISSING_REQUIRED_ARGUMENT",
             category="validation",
             retryable=False,
-            detail="缺少必填参数 job_id",
-            suggestion="传入非空字符串 job_id 后重试",
+            detail="Missing required argument: job_id",
+            suggestion="Provide a non-empty job_id and try again",
         )
     return job_id, None
 
@@ -102,23 +102,23 @@ def validate_generation_args(args: dict[str, Any], *, default_model: str) -> tup
         has_missing_prompt = any(item.get("type") == "missing" and item.get("loc") == ("prompt",) for item in exc.errors())
         if has_missing_prompt:
             return None, build_tool_error_result(
-                "参数校验失败",
+                "Argument validation failed",
                 stage="validation",
                 reason_code="MISSING_REQUIRED_ARGUMENT",
                 category="validation",
                 retryable=False,
-                detail="缺少必填参数 prompt",
-                suggestion="传入非空字符串 prompt 后重试",
+                detail="Missing required argument: prompt",
+                suggestion="Provide a non-empty prompt and try again",
             )
 
         return None, build_tool_error_result(
-            "参数校验失败",
+            "Argument validation failed",
             stage="validation",
             reason_code="ARGUMENT_VALIDATION_FAILED",
             category="validation",
             retryable=False,
             detail=_validation_error_detail(exc),
-            suggestion="检查参数类型与取值范围后重试",
+            suggestion="Check argument types and value ranges, then try again",
         )
 
     try:
@@ -129,35 +129,35 @@ def validate_generation_args(args: dict[str, Any], *, default_model: str) -> tup
         size = _normalize_size(parsed_args.size)
     except ValueError as exc:
         return None, build_tool_error_result(
-            "参数校验失败",
+            "Argument validation failed",
             stage="validation",
             reason_code="ARGUMENT_VALIDATION_FAILED",
             category="validation",
             retryable=False,
             detail=str(exc),
-            suggestion="检查参数类型与取值范围后重试",
+            suggestion="Check argument types and value ranges, then try again",
         )
 
     if not prompt:
         return None, build_tool_error_result(
-            "参数校验失败",
+            "Argument validation failed",
             stage="validation",
             reason_code="MISSING_REQUIRED_ARGUMENT",
             category="validation",
             retryable=False,
-            detail="缺少必填参数 prompt",
-            suggestion="传入非空字符串 prompt 后重试",
+            detail="Missing required argument: prompt",
+            suggestion="Provide a non-empty prompt and try again",
         )
 
     if not model or not output_filename or not output_dir:
         return None, build_tool_error_result(
-            "参数校验失败",
+            "Argument validation failed",
             stage="validation",
             reason_code="ARGUMENT_VALIDATION_FAILED",
             category="validation",
             retryable=False,
-            detail="model/output_filename/output_dir 必须为非空字符串",
-            suggestion="检查参数类型与取值范围后重试",
+            detail="model/output_filename/output_dir must be non-empty strings",
+            suggestion="Check argument types and value ranges, then try again",
         )
 
     return (

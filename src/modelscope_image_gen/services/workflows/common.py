@@ -55,23 +55,23 @@ class ServiceCommonWorkflow:
             job = self.task_store.load(job_id)
         except (RuntimeError, ValueError) as exc:
             return None, build_tool_error_result(
-                "任务状态读取失败",
+                "Failed to read job state",
                 stage="storage",
                 reason_code="JOB_STATE_READ_FAILED",
                 category="local_io",
                 retryable=False,
                 detail=str(exc),
-                suggestion="检查本地任务状态目录权限与文件完整性",
+                suggestion="Check local job-state directory permissions and file integrity",
             )
         if job is None:
             return None, build_tool_error_result(
-                "任务不存在",
+                "Job not found",
                 stage="validation",
                 reason_code="JOB_NOT_FOUND",
                 category="validation",
                 retryable=False,
-                detail=f"未找到 job_id={job_id}",
-                suggestion="先调用 submit_image_generation 创建任务",
+                detail=f"No job found for job_id={job_id}",
+                suggestion="Create a job first via submit_image_generation",
             )
         return job, None
 
@@ -98,11 +98,11 @@ class ServiceCommonWorkflow:
             return None
         except Exception as save_err:  # noqa: BLE001
             return build_tool_error_result(
-                "图片保存失败",
+                "Failed to save image",
                 stage="save",
                 reason_code="IMAGE_SAVE_FAILED",
                 category="local_io",
                 retryable=False,
                 detail=str(save_err),
-                suggestion="检查输出目录权限、磁盘空间、文件名是否合法",
+                suggestion="Check output directory permissions, disk space, and filename validity",
             )

@@ -42,7 +42,7 @@ class ServicePhaseWorkflow:
         logger.info("stage=submit request_id=%s task_id=%s", submit_request_id, task_id)
         if not task_id:
             return build_tool_error_result(
-                "任务提交失败",
+                "Job submission failed",
                 stage="submit",
                 reason_code="TASK_ID_MISSING",
                 category="upstream_response",
@@ -50,8 +50,8 @@ class ServicePhaseWorkflow:
                 retry_after_seconds=1,
                 status_code=submit_response.status_code,
                 request_id=submit_request_id,
-                detail="提交成功返回，但响应中缺少 task_id",
-                suggestion="检查模型与参数是否被服务端接受，确认网关是否返回标准异步任务结构",
+                detail="Submission returned success but task_id is missing in the response",
+                suggestion="Check whether the model and arguments are accepted and whether the gateway returns the standard async task schema",
                 body=submit_data,
             )
         return task_id, submit_request_id
@@ -77,7 +77,14 @@ class ServicePhaseWorkflow:
             poll_data = poll_response.json()
             task_status = poll_data.get("task_status")
             poll_request_id = poll_response.headers.get("X-Request-Id")
-            logger.info("任务状态: %s (尝试 %s/%s, wait=%.2fs)", task_status, attempt, max_attempts, wait_time)
+            logger.info(
+                "stage=poll status=%s attempt=%s/%s wait=%.2fs task_id=%s",
+                task_status,
+                attempt,
+                max_attempts,
+                wait_time,
+                task_id,
+            )
             logger.info(
                 "stage=poll request_id=%s task_id=%s status=%s attempt=%s/%s",
                 poll_request_id,
@@ -91,24 +98,24 @@ class ServicePhaseWorkflow:
                 output_images = poll_data.get("output_images", [])
                 if not output_images:
                     return build_tool_error_result(
-                        "任务成功但没有输出图片",
+                        "Task succeeded but no output image was returned",
                         stage="poll",
                         reason_code="EMPTY_OUTPUT_IMAGES",
                         category="upstream_response",
                         retryable=False,
                         request_id=poll_request_id or submit_request_id,
-                        detail="task_status=SUCCEED 但 output_images 为空",
-                        suggestion="检查模型输出内容与服务端返回格式",
+                        detail="task_status=SUCCEED but output_images is empty",
+                        suggestion="Check model output and upstream response format",
                         body=poll_data,
                     )
                 return output_images[0], poll_request_id
 
             if task_status == "FAILED":
-                error_msg = poll_data.get("message", "任务失败")
+                error_msg = poll_data.get("message", "Task failed")
                 status_code = poll_data.get("status_code") or poll_data.get("code") or poll_response.status_code
                 retryable = isinstance(status_code, int) and status_code in RETRYABLE_HTTP_STATUS
                 return build_tool_error_result(
-                    "图片生成失败",
+                    "Image generation failed",
                     stage="poll",
                     reason_code="TASK_FAILED",
                     category="upstream_task",
@@ -117,33 +124,33 @@ class ServicePhaseWorkflow:
                     status_code=status_code if isinstance(status_code, int) else None,
                     request_id=poll_request_id,
                     detail=error_msg,
-                    suggestion="根据 body 中的服务端错误信息调整提示词、模型或请求参数",
+                    suggestion="Adjust prompt, model, or request arguments based on upstream error details in body",
                     body=poll_data,
                 )
 
             if task_status not in {"PENDING", "RUNNING", "PROCESSING"}:
                 return build_tool_error_result(
-                    "任务状态异常",
+                    "Unexpected task status",
                     stage="poll",
                     reason_code="UNKNOWN_TASK_STATUS",
                     category="upstream_response",
                     retryable=False,
                     status_code=poll_response.status_code,
                     request_id=poll_request_id,
-                    detail=f"收到未识别的 task_status: {task_status}",
-                    suggestion="检查 API 版本是否变化，或任务状态字段是否发生兼容性变更",
+                    detail=f"Received unrecognized task_status: {task_status}",
+                    suggestion="Check for API version changes or task-status field compatibility changes",
                     body=poll_data,
                 )
 
         return build_tool_error_result(
-            "图片生成超时，任务可能仍在处理中",
+            "Image generation timed out; the task may still be processing",
             stage="poll",
             reason_code="POLL_TIMEOUT",
             category="timeout",
             retryable=True,
             retry_after_seconds=int(base_interval) if base_interval >= 1 else 1,
-            detail=(f"达到最大轮询次数仍未完成: max_attempts={max_attempts}, base_interval={base_interval}, backoff={use_backoff}, max_interval={max_interval}"),
-            suggestion="适当提高 max_poll_attempts 或检查服务端任务排队情况",
+            detail=(f"Task did not complete before max polling attempts: max_attempts={max_attempts}, base_interval={base_interval}, backoff={use_backoff}, max_interval={max_interval}"),
+            suggestion="Increase max_poll_attempts or check upstream queue/backlog status",
         )
 
     async def _download_decode_phase(
@@ -159,29 +166,29 @@ class ServicePhaseWorkflow:
         logger.info("stage=download request_id=%s image_url=%s", image_request_id, image_url)
         if normalized_content_type and normalized_content_type != "application/octet-stream" and not normalized_content_type.startswith("image/"):
             return build_tool_error_result(
-                "图片下载失败：返回的内容不是图片",
+                "Image download failed: response is not an image",
                 stage="download",
                 reason_code="INVALID_CONTENT_TYPE",
                 category="upstream_response",
                 retryable=False,
                 status_code=image_response.status_code,
                 request_id=image_request_id,
-                detail=f"下载内容的 Content-Type 为 {content_type}",
-                suggestion="检查返回 URL 是否过期、鉴权是否生效、或服务端是否返回了错误页面",
+                detail=f"Downloaded content has Content-Type: {content_type}",
+                suggestion="Check whether the URL expired, authentication is valid, or the server returned an error page",
             )
 
         try:
             image = Image.open(BytesIO(image_response.content))
         except UnidentifiedImageError:
             return build_tool_error_result(
-                "图片解析失败",
+                "Image decode failed",
                 stage="decode",
                 reason_code="IMAGE_DECODE_FAILED",
                 category="data_format",
                 retryable=False,
                 status_code=image_response.status_code,
                 request_id=image_request_id,
-                detail="Content-Type 为图片，但 PIL 无法解析字节内容",
-                suggestion="检查返回数据是否损坏，或服务端是否返回了非标准图片字节",
+                detail="Content-Type indicates an image, but PIL cannot decode the bytes",
+                suggestion="Check whether returned bytes are corrupted or in a non-standard image format",
             )
         return image, image_request_id

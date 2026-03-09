@@ -32,13 +32,13 @@ async def handle_list_tools() -> list[types.Tool]:
 async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> types.CallToolResult:
     if name not in SUPPORTED_TOOL_NAMES:
         return build_tool_error_result(
-            "工具调用失败",
+            "Tool invocation failed",
             stage="validation",
             reason_code="UNKNOWN_TOOL",
             category="validation",
             retryable=False,
-            detail=f"不支持的工具名 {name}",
-            suggestion="使用 list_tools 获取可用工具，并调用对应工具",
+            detail=f"Unsupported tool name: {name}",
+            suggestion="Use list_tools to discover available tools and call one of them",
         )
 
     args = arguments or {}
@@ -56,13 +56,13 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> types
         return validation_error
     if validated_args is None:
         return build_tool_error_result(
-            "参数校验失败",
+            "Argument validation failed",
             stage="validation",
             reason_code="ARGUMENT_VALIDATION_FAILED",
             category="validation",
             retryable=False,
-            detail="参数解析失败",
-            suggestion="检查参数类型与取值范围后重试",
+            detail="Argument parsing failed",
+            suggestion="Check argument types and value ranges, then try again",
         )
 
     prompt = validated_args.prompt
@@ -121,7 +121,7 @@ def cli_main() -> None:
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("服务器已停止")
+        logger.info("Server stopped")
 
 
 if __name__ == "__main__":
