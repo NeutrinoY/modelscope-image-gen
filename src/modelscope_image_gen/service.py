@@ -396,8 +396,13 @@ class ImageGenerationService:
         image_response = await self.client.download_image(client, image_url=image_url)
         image_request_id = image_response.headers.get("X-Request-Id")
         content_type = image_response.headers.get("Content-Type", "")
+        normalized_content_type = content_type.split(";", 1)[0].strip().lower()
         logger.info("stage=download request_id=%s image_url=%s", image_request_id, image_url)
-        if not content_type.startswith("image/"):
+        if (
+            normalized_content_type
+            and normalized_content_type != "application/octet-stream"
+            and not normalized_content_type.startswith("image/")
+        ):
             return build_tool_error_result(
                 "图片下载失败：返回的内容不是图片",
                 stage="download",
