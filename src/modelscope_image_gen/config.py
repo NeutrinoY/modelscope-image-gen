@@ -7,7 +7,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
     modelscope_sdk_token: str = Field(default="", validation_alias="MODELSCOPE_SDK_TOKEN")
     modelscope_api_base: str = Field(default="https://api-inference.modelscope.cn/")

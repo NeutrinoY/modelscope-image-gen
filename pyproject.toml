@@ -38,6 +38,6 @@ target-version = "py310"
 select = ["E", "F", "I", "B", "UP", "N"]
 
 [tool.pyright]
-include = ["main.py", "src"]
+include = ["main.py", "src", "tests"]
 extraPaths = ["src"]
 reportMissingImports = "none"
