@@ -5,15 +5,50 @@ import asyncio
 import logging
 import os
 from io import BytesIO
+from typing import Any
 
 import httpx
 from mcp import types
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from .client import ModelScopeClient
 from .config import Settings
 
 logger = logging.getLogger("modelscope-image-gen")
+
+
+def _stringify_body(response: httpx.Response | None) -> str | None:
+    if response is None:
+        return None
+    try:
+        return response.text
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _build_error_text(
+    title: str,
+    *,
+    stage: str,
+    reason_code: str,
+    status_code: int | None = None,
+    request_id: str | None = None,
+    detail: str | None = None,
+    suggestion: str | None = None,
+    body: Any | None = None,
+) -> str:
+    lines = [title, f"stage: {stage}", f"reason_code: {reason_code}"]
+    if status_code is not None:
+        lines.append(f"status_code: {status_code}")
+    if request_id:
+        lines.append(f"request_id: {request_id}")
+    if detail:
+        lines.append(f"detail: {detail}")
+    if suggestion:
+        lines.append(f"suggestion: {suggestion}")
+    if body is not None:
+        lines.append(f"body: {body}")
+    return "\n".join(lines)
 
 
 class ImageGenerationService:
@@ -40,24 +75,15 @@ class ImageGenerationService:
         seed: int | None,
     ) -> list[types.TextContent]:
         try:
+            self.settings.require_api_key()
             os.makedirs(output_dir, exist_ok=True)
             output_path = os.path.join(output_dir, output_filename)
 
             cfg = self.settings.polling_defaults()
-            base_interval = (
-                poll_interval_seconds
-                if poll_interval_seconds is not None
-                else float(cfg["base_interval"])
-            )
-            max_attempts = (
-                max_poll_attempts if max_poll_attempts is not None else int(cfg["max_attempts"])
-            )
+            base_interval = poll_interval_seconds if poll_interval_seconds is not None else float(cfg["base_interval"])
+            max_attempts = max_poll_attempts if max_poll_attempts is not None else int(cfg["max_attempts"])
             use_backoff = poll_backoff if poll_backoff is not None else bool(cfg["backoff"])
-            max_interval = (
-                max_poll_interval_seconds
-                if max_poll_interval_seconds is not None
-                else float(cfg["max_interval"])
-            )
+            max_interval = max_poll_interval_seconds if max_poll_interval_seconds is not None else float(cfg["max_interval"])
 
             logger.info("正在使用模型 %s 生成图片，提示词: %s", model, prompt)
 
@@ -77,22 +103,22 @@ class ImageGenerationService:
                     return [
                         types.TextContent(
                             type="text",
-                            text=(
-                                "任务提交失败\n"
-                                f"status_code: {submit_response.status_code}\n"
-                                f"request_id: {submit_request_id}\n"
-                                f"body: {submit_data}"
+                            text=_build_error_text(
+                                "任务提交失败",
+                                stage="submit",
+                                reason_code="TASK_ID_MISSING",
+                                status_code=submit_response.status_code,
+                                request_id=submit_request_id,
+                                detail="提交成功返回，但响应中缺少 task_id",
+                                suggestion="检查模型与参数是否被服务端接受，确认网关是否返回标准异步任务结构",
+                                body=submit_data,
                             ),
                         )
                     ]
 
                 attempt = 0
                 while attempt < max_attempts:
-                    wait_time = (
-                        base_interval
-                        if not use_backoff
-                        else min(base_interval * (2**attempt), max_interval)
-                    )
+                    wait_time = base_interval if not use_backoff else min(base_interval * (2**attempt), max_interval)
                     await asyncio.sleep(wait_time)
                     attempt += 1
 
@@ -111,28 +137,59 @@ class ImageGenerationService:
                     if task_status == "SUCCEED":
                         output_images = poll_data.get("output_images", [])
                         if not output_images:
-                            return [types.TextContent(type="text", text="任务成功但没有输出图片")]
+                            return [
+                                types.TextContent(
+                                    type="text",
+                                    text=_build_error_text(
+                                        "任务成功但没有输出图片",
+                                        stage="poll",
+                                        reason_code="EMPTY_OUTPUT_IMAGES",
+                                        request_id=poll_request_id or submit_request_id,
+                                        detail="task_status=SUCCEED 但 output_images 为空",
+                                        suggestion="检查模型输出内容与服务端返回格式",
+                                        body=poll_data,
+                                    ),
+                                )
+                            ]
 
                         image_url = output_images[0]
-                        image_response = await self.client.download_image(
-                            client, image_url=image_url
-                        )
+                        image_response = await self.client.download_image(client, image_url=image_url)
                         image_request_id = image_response.headers.get("X-Request-Id")
                         content_type = image_response.headers.get("Content-Type", "")
                         if not content_type.startswith("image/"):
                             return [
                                 types.TextContent(
                                     type="text",
-                                    text=(
-                                        "图片下载失败：返回的内容不是图片\n"
-                                        f"status_code: {image_response.status_code}\n"
-                                        f"request_id: {image_request_id}\n"
-                                        f"content_type: {content_type}"
+                                    text=_build_error_text(
+                                        "图片下载失败：返回的内容不是图片",
+                                        stage="download",
+                                        reason_code="INVALID_CONTENT_TYPE",
+                                        status_code=image_response.status_code,
+                                        request_id=image_request_id,
+                                        detail=f"下载内容的 Content-Type 为 {content_type}",
+                                        suggestion="检查返回 URL 是否过期、鉴权是否生效、或服务端是否返回了错误页面",
                                     ),
                                 )
                             ]
 
-                        image = Image.open(BytesIO(image_response.content))
+                        try:
+                            image = Image.open(BytesIO(image_response.content))
+                        except UnidentifiedImageError:
+                            return [
+                                types.TextContent(
+                                    type="text",
+                                    text=_build_error_text(
+                                        "图片解析失败",
+                                        stage="decode",
+                                        reason_code="IMAGE_DECODE_FAILED",
+                                        status_code=image_response.status_code,
+                                        request_id=image_request_id,
+                                        detail="Content-Type 为图片，但 PIL 无法解析字节内容",
+                                        suggestion="检查返回数据是否损坏，或服务端是否返回了非标准图片字节",
+                                    ),
+                                )
+                            ]
+
                         try:
                             if output_path.lower().endswith((".jpg", ".jpeg")) and image.mode in (
                                 "RGBA",
@@ -142,7 +199,16 @@ class ImageGenerationService:
                             image.save(output_path)
                         except Exception as save_err:  # noqa: BLE001
                             return [
-                                types.TextContent(type="text", text=f"图片保存失败: {save_err}")
+                                types.TextContent(
+                                    type="text",
+                                    text=_build_error_text(
+                                        "图片保存失败",
+                                        stage="save",
+                                        reason_code="IMAGE_SAVE_FAILED",
+                                        detail=str(save_err),
+                                        suggestion="检查输出目录权限、磁盘空间、文件名是否合法",
+                                    ),
+                                )
                             ]
 
                         return [
@@ -164,19 +230,36 @@ class ImageGenerationService:
 
                     if task_status == "FAILED":
                         error_msg = poll_data.get("message", "任务失败")
-                        status_code = (
-                            poll_data.get("status_code")
-                            or poll_data.get("code")
-                            or poll_response.status_code
-                        )
+                        status_code = poll_data.get("status_code") or poll_data.get("code") or poll_response.status_code
                         return [
                             types.TextContent(
                                 type="text",
-                                text=(
-                                    f"图片生成失败: {error_msg}\n"
-                                    f"status_code: {status_code}\n"
-                                    f"request_id: {poll_request_id}\n"
-                                    f"body: {poll_data}"
+                                text=_build_error_text(
+                                    "图片生成失败",
+                                    stage="poll",
+                                    reason_code="TASK_FAILED",
+                                    status_code=status_code,
+                                    request_id=poll_request_id,
+                                    detail=error_msg,
+                                    suggestion="根据 body 中的服务端错误信息调整提示词、模型或请求参数",
+                                    body=poll_data,
+                                ),
+                            )
+                        ]
+
+                    if task_status not in {"PENDING", "RUNNING"}:
+                        return [
+                            types.TextContent(
+                                type="text",
+                                text=_build_error_text(
+                                    "任务状态异常",
+                                    stage="poll",
+                                    reason_code="UNKNOWN_TASK_STATUS",
+                                    status_code=poll_response.status_code,
+                                    request_id=poll_request_id,
+                                    detail=f"收到未识别的 task_status: {task_status}",
+                                    suggestion=("检查 API 版本是否变化，或任务状态字段是否发生兼容性变更"),
+                                    body=poll_data,
                                 ),
                             )
                         ]
@@ -184,30 +267,91 @@ class ImageGenerationService:
                 return [
                     types.TextContent(
                         type="text",
-                        text=(
-                            "图片生成超时，任务可能仍在处理中\n"
-                            f"max_attempts: {max_attempts}\n"
-                            f"base_interval: {base_interval}\n"
-                            f"backoff: {use_backoff}\n"
-                            f"max_interval: {max_interval}"
+                        text=_build_error_text(
+                            "图片生成超时，任务可能仍在处理中",
+                            stage="poll",
+                            reason_code="POLL_TIMEOUT",
+                            detail=(
+                                f"达到最大轮询次数仍未完成: max_attempts={max_attempts}, "
+                                f"base_interval={base_interval}, backoff={use_backoff}, max_interval={max_interval}"
+                            ),
+                            suggestion="适当提高 max_poll_attempts 或检查服务端任务排队情况",
                         ),
                     )
                 ]
+        except ValueError as err:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=_build_error_text(
+                        "配置错误",
+                        stage="validation",
+                        reason_code="MISSING_API_KEY",
+                        detail=str(err),
+                        suggestion="设置环境变量 MODELSCOPE_SDK_TOKEN 后重试",
+                    ),
+                )
+            ]
         except httpx.HTTPStatusError as http_err:
             resp = http_err.response
             status_code = getattr(resp, "status_code", None)
             request_id = resp.headers.get("X-Request-Id") if resp else None
-            body = resp.text if resp else None
+            body = _stringify_body(resp)
+
+            stage = "request"
+            reason_code = "HTTP_STATUS_ERROR"
+            if resp is not None and resp.request is not None:
+                path = resp.request.url.path
+                if path.endswith("/v1/images/generations"):
+                    stage = "submit"
+                    reason_code = "SUBMIT_HTTP_ERROR"
+                elif "/v1/tasks/" in path:
+                    stage = "poll"
+                    reason_code = "POLL_HTTP_ERROR"
+                else:
+                    stage = "download"
+                    reason_code = "DOWNLOAD_HTTP_ERROR"
+
             return [
                 types.TextContent(
                     type="text",
-                    text=(
-                        "请求失败\n"
-                        f"status_code: {status_code}\n"
-                        f"request_id: {request_id}\n"
-                        f"body: {body}"
+                    text=_build_error_text(
+                        "请求失败",
+                        stage=stage,
+                        reason_code=reason_code,
+                        status_code=status_code,
+                        request_id=request_id,
+                        detail="上游接口返回非 2xx 状态码",
+                        suggestion=("检查请求参数、鉴权令牌、服务可用性，并结合 body 与 request_id 排查"),
+                        body=body,
+                    ),
+                )
+            ]
+        except httpx.RequestError as req_err:
+            request_url = str(req_err.request.url) if req_err.request else None
+            return [
+                types.TextContent(
+                    type="text",
+                    text=_build_error_text(
+                        "网络请求异常",
+                        stage="request",
+                        reason_code="NETWORK_ERROR",
+                        detail=str(req_err),
+                        suggestion="检查网络连通性、DNS、代理与 TLS 配置",
+                        body=request_url,
                     ),
                 )
             ]
         except Exception as err:  # noqa: BLE001
-            return [types.TextContent(type="text", text=f"生成图片时发生错误: {err}")]
+            return [
+                types.TextContent(
+                    type="text",
+                    text=_build_error_text(
+                        "生成图片时发生错误",
+                        stage="unexpected",
+                        reason_code="UNEXPECTED_ERROR",
+                        detail=str(err),
+                        suggestion="查看服务端日志并携带请求参数进行复现",
+                    ),
+                )
+            ]

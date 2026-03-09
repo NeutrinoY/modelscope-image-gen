@@ -89,22 +89,48 @@ async def handle_list_tools() -> list[types.Tool]:
 
 
 @app.call_tool()
-async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextContent]:
+async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[types.TextContent]:
     if name != "generate_image":
-        raise ValueError(f"未知工具: {name}")
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    "工具调用失败\n"
+                    "stage: validation\n"
+                    "reason_code: UNKNOWN_TOOL\n"
+                    f"detail: 不支持的工具名 {name}\n"
+                    "suggestion: 使用 list_tools 获取可用工具，并调用 generate_image"
+                ),
+            )
+        ]
+
+    args = arguments or {}
+    if "prompt" not in args or not args["prompt"]:
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    "参数校验失败\n"
+                    "stage: validation\n"
+                    "reason_code: MISSING_REQUIRED_ARGUMENT\n"
+                    "detail: 缺少必填参数 prompt\n"
+                    "suggestion: 传入非空字符串 prompt 后重试"
+                ),
+            )
+        ]
 
     return await service.generate_image(
-        prompt=arguments["prompt"],
-        model=arguments.get("model", settings.default_model),
-        size=arguments.get("size", "1024x1024"),
-        output_filename=arguments.get("output_filename", "result_image.jpg"),
-        output_dir=arguments.get("output_dir", "./outputs"),
-        poll_interval_seconds=arguments.get("poll_interval_seconds"),
-        max_poll_attempts=arguments.get("max_poll_attempts"),
-        poll_backoff=arguments.get("poll_backoff"),
-        max_poll_interval_seconds=arguments.get("max_poll_interval_seconds"),
-        negative_prompt=arguments.get("negative_prompt"),
-        seed=arguments.get("seed"),
+        prompt=args["prompt"],
+        model=args.get("model", settings.default_model),
+        size=args.get("size", "1024x1024"),
+        output_filename=args.get("output_filename", "result_image.jpg"),
+        output_dir=args.get("output_dir", "./outputs"),
+        poll_interval_seconds=args.get("poll_interval_seconds"),
+        max_poll_attempts=args.get("max_poll_attempts"),
+        poll_backoff=args.get("poll_backoff"),
+        max_poll_interval_seconds=args.get("max_poll_interval_seconds"),
+        negative_prompt=args.get("negative_prompt"),
+        seed=args.get("seed"),
     )
 
 
