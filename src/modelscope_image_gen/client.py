@@ -66,9 +66,7 @@ class ModelScopeClient:
         response.raise_for_status()
         return response
 
-    async def download_image(
-        self, client: httpx.AsyncClient, *, image_url: str
-    ) -> httpx.Response:
+    async def download_image(self, client: httpx.AsyncClient, *, image_url: str) -> httpx.Response:
         response = await client.get(image_url)
         response.raise_for_status()
         return response

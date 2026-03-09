@@ -11,7 +11,7 @@ from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 
 from .config import get_settings
-from .service import ImageGenerationService
+from .service import ImageGenerationService, build_tool_error_result
 
 settings = get_settings()
 logging.basicConfig(level=getattr(logging, settings.modelscope_log_level.upper(), logging.INFO))
@@ -41,10 +41,7 @@ async def handle_list_tools() -> list[types.Tool]:
                     },
                     "size": {
                         "type": "string",
-                        "description": (
-                            "生成图像分辨率大小，Qwen-Image支持:[64x64,1664x1664]，"
-                            "默认为 '1024x1024'"
-                        ),
+                        "description": ("生成图像分辨率大小，Qwen-Image支持:[64x64,1664x1664]，默认为 '1024x1024'"),
                         "default": "1024x1024",
                     },
                     "output_filename": {
@@ -89,35 +86,29 @@ async def handle_list_tools() -> list[types.Tool]:
 
 
 @app.call_tool()
-async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[types.TextContent]:
+async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> types.CallToolResult:
     if name != "generate_image":
-        return [
-            types.TextContent(
-                type="text",
-                text=(
-                    "工具调用失败\n"
-                    "stage: validation\n"
-                    "reason_code: UNKNOWN_TOOL\n"
-                    f"detail: 不支持的工具名 {name}\n"
-                    "suggestion: 使用 list_tools 获取可用工具，并调用 generate_image"
-                ),
-            )
-        ]
+        return build_tool_error_result(
+            "工具调用失败",
+            stage="validation",
+            reason_code="UNKNOWN_TOOL",
+            category="validation",
+            retryable=False,
+            detail=f"不支持的工具名 {name}",
+            suggestion="使用 list_tools 获取可用工具，并调用 generate_image",
+        )
 
     args = arguments or {}
     if "prompt" not in args or not args["prompt"]:
-        return [
-            types.TextContent(
-                type="text",
-                text=(
-                    "参数校验失败\n"
-                    "stage: validation\n"
-                    "reason_code: MISSING_REQUIRED_ARGUMENT\n"
-                    "detail: 缺少必填参数 prompt\n"
-                    "suggestion: 传入非空字符串 prompt 后重试"
-                ),
-            )
-        ]
+        return build_tool_error_result(
+            "参数校验失败",
+            stage="validation",
+            reason_code="MISSING_REQUIRED_ARGUMENT",
+            category="validation",
+            retryable=False,
+            detail="缺少必填参数 prompt",
+            suggestion="传入非空字符串 prompt 后重试",
+        )
 
     return await service.generate_image(
         prompt=args["prompt"],

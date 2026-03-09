@@ -48,10 +48,12 @@ async def test_generate_image_returns_validation_error_when_api_key_missing() ->
         seed=None,
     )
 
-    text = result[0].text
-    assert "配置错误" in text
-    assert "stage: validation" in text
-    assert "reason_code: MISSING_API_KEY" in text
+    assert result.isError is True
+    assert result.structuredContent is not None
+    err = result.structuredContent["error"]
+    assert err["reason_code"] == "MISSING_API_KEY"
+    assert err["category"] == "validation"
+    assert err["retryable"] is False
 
 
 @pytest.mark.asyncio
@@ -83,11 +85,11 @@ async def test_generate_image_reports_missing_task_id(monkeypatch, tmp_path) -> 
         seed=None,
     )
 
-    text = result[0].text
-    assert "任务提交失败" in text
-    assert "stage: submit" in text
-    assert "reason_code: TASK_ID_MISSING" in text
-    assert "request_id: req-submit-1" in text
+    assert result.isError is True
+    err = result.structuredContent["error"]
+    assert err["reason_code"] == "TASK_ID_MISSING"
+    assert err["category"] == "upstream_response"
+    assert err["retryable"] is True
 
 
 @pytest.mark.asyncio
@@ -132,11 +134,12 @@ async def test_generate_image_reports_task_failed(monkeypatch, tmp_path) -> None
         seed=None,
     )
 
-    text = result[0].text
-    assert "图片生成失败" in text
-    assert "stage: poll" in text
-    assert "reason_code: TASK_FAILED" in text
-    assert "detail: quota exceeded" in text
+    assert result.isError is True
+    err = result.structuredContent["error"]
+    assert err["reason_code"] == "TASK_FAILED"
+    assert err["category"] == "upstream_task"
+    assert err["retryable"] is True
+    assert err["retry_after_seconds"] == 1
 
 
 @pytest.mark.asyncio
@@ -181,8 +184,46 @@ async def test_generate_image_reports_unknown_task_status(monkeypatch, tmp_path)
         seed=None,
     )
 
-    text = result[0].text
-    assert "任务状态异常" in text
-    assert "stage: poll" in text
-    assert "reason_code: UNKNOWN_TASK_STATUS" in text
-    assert "CANCELLED" in text
+    assert result.isError is True
+    err = result.structuredContent["error"]
+    assert err["reason_code"] == "UNKNOWN_TASK_STATUS"
+    assert err["category"] == "upstream_response"
+    assert err["retryable"] is False
+
+
+@pytest.mark.asyncio
+async def test_generate_image_redacts_sensitive_fields_in_body(monkeypatch) -> None:
+    service = ImageGenerationService(Settings(modelscope_sdk_token="token"))
+
+    monkeypatch.setattr("modelscope_image_gen.service.httpx.AsyncClient", DummyAsyncClient)
+
+    async def fake_submit(client, **kwargs):
+        return FakeResponse(
+            status_code=200,
+            headers={"X-Request-Id": "req-submit-4"},
+            json_data={
+                "error": "bad",
+                "token": "abc123",
+                "nested": {"authorization": "Bearer SECRET_TOKEN"},
+            },
+        )
+
+    monkeypatch.setattr(service.client, "submit_generation", AsyncMock(side_effect=fake_submit))
+
+    result = await service.generate_image(
+        prompt="cat",
+        model="Qwen/Qwen-Image",
+        size="1024x1024",
+        output_filename="x.jpg",
+        output_dir="./outputs",
+        poll_interval_seconds=0,
+        max_poll_attempts=1,
+        poll_backoff=False,
+        max_poll_interval_seconds=1,
+        negative_prompt=None,
+        seed=None,
+    )
+
+    err = result.structuredContent["error"]
+    assert err["body"]["token"] == "[REDACTED]"
+    assert err["body"]["nested"]["authorization"] == "[REDACTED]"

@@ -19,12 +19,8 @@ class Settings(BaseSettings):
     default_model: str = Field(default="Qwen/Qwen-Image")
     modelscope_log_level: str = Field(default="INFO", validation_alias="MODELSCOPE_LOG_LEVEL")
 
-    modelscope_poll_interval_seconds: float = Field(
-        default=5, validation_alias="MODELSCOPE_POLL_INTERVAL_SECONDS"
-    )
-    modelscope_max_poll_attempts: int = Field(
-        default=120, validation_alias="MODELSCOPE_MAX_POLL_ATTEMPTS"
-    )
+    modelscope_poll_interval_seconds: float = Field(default=5, validation_alias="MODELSCOPE_POLL_INTERVAL_SECONDS")
+    modelscope_max_poll_attempts: int = Field(default=120, validation_alias="MODELSCOPE_MAX_POLL_ATTEMPTS")
     modelscope_poll_backoff: bool = Field(default=False, validation_alias="MODELSCOPE_POLL_BACKOFF")
     modelscope_max_poll_interval_seconds: float = Field(
         default=30,
