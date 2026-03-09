@@ -1,5 +1,9 @@
-def main():
-    print("Hello from modelscope-image-gen!")
+# pyright: reportMissingImports=false
+from modelscope_image_gen.server import cli_main
+
+
+def main() -> None:
+    cli_main()
 
 
 if __name__ == "__main__":
