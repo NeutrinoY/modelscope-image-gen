@@ -69,116 +69,143 @@ async def handle_list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="submit_image_generation",
-            description="提交图片生成任务并返回可查询的 job_id",
+            description="Start a non-blocking image generation job and return a job_id for later status/result calls",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "prompt": {"type": "string", "description": "图片生成提示词"},
+                    "prompt": {
+                        "type": "string",
+                        "description": "Required. Main generation prompt",
+                    },
                     "model": {
                         "type": "string",
-                        "description": f"模型名称，默认为 {settings.default_model}",
+                        "description": f"Optional. Model name (default: {settings.default_model})",
                         "default": settings.default_model,
                     },
                     "size": {
                         "type": "string",
-                        "description": "生成图像分辨率大小，格式 WIDTHxHEIGHT",
+                        "description": "Optional. Output resolution in WIDTHxHEIGHT format (for example: 1024x1024)",
                         "default": "1024x1024",
                     },
                     "output_filename": {
                         "type": "string",
-                        "description": "输出图片文件名",
+                        "description": "Optional. Local output filename",
                         "default": "result_image.jpg",
                     },
                     "output_dir": {
                         "type": "string",
-                        "description": "输出目录路径",
+                        "description": "Optional. Local output directory path",
                         "default": "./outputs",
                     },
-                    "poll_interval_seconds": {"type": "number", "description": "轮询基础间隔(秒)"},
-                    "max_poll_attempts": {"type": "integer", "description": "最大轮询次数"},
-                    "poll_backoff": {"type": "boolean", "description": "是否开启指数退避"},
-                    "max_poll_interval_seconds": {"type": "number", "description": "指数退避最大间隔(秒)"},
-                    "negative_prompt": {"type": "string", "description": "负向提示词，可选"},
-                    "seed": {"type": "integer", "description": "随机种子，可选"},
+                    "poll_interval_seconds": {
+                        "type": "number",
+                        "description": "Optional. Base polling interval in seconds for subsequent status checks",
+                    },
+                    "max_poll_attempts": {
+                        "type": "integer",
+                        "description": "Optional. Max polling attempts used by status/result follow-up tools",
+                    },
+                    "poll_backoff": {
+                        "type": "boolean",
+                        "description": "Optional. Enable exponential polling backoff",
+                    },
+                    "max_poll_interval_seconds": {
+                        "type": "number",
+                        "description": "Optional. Max polling interval in seconds when backoff is enabled",
+                    },
+                    "negative_prompt": {
+                        "type": "string",
+                        "description": "Optional. Negative prompt to suppress unwanted styles/artifacts",
+                    },
+                    "seed": {
+                        "type": "integer",
+                        "description": "Optional. Random seed for reproducibility",
+                    },
                 },
                 "required": ["prompt"],
             },
         ),
         types.Tool(
             name="get_image_generation_status",
-            description="根据 job_id 查询任务状态",
+            description="Check job progress by job_id. Use this after submit_image_generation until state is terminal",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "job_id": {"type": "string", "description": "提交时返回的任务标识"},
+                    "job_id": {
+                        "type": "string",
+                        "description": "Required. job_id returned by submit_image_generation",
+                    },
                 },
                 "required": ["job_id"],
             },
         ),
         types.Tool(
             name="get_image_generation_result",
-            description="根据 job_id 获取并保存生成结果",
+            description="Fetch and save the final image by job_id. Call when status indicates the job is ready",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "job_id": {"type": "string", "description": "提交时返回的任务标识"},
+                    "job_id": {
+                        "type": "string",
+                        "description": "Required. job_id returned by submit_image_generation",
+                    },
                 },
                 "required": ["job_id"],
             },
         ),
         types.Tool(
             name="generate_image",
-            description="使用ModelScope生成图片",
+            description="Blocking convenience API: submit, poll, download, and save in one call",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "prompt": {
                         "type": "string",
-                        "description": "图片生成提示词",
+                        "description": "Required. Main generation prompt",
                     },
                     "model": {
                         "type": "string",
-                        "description": f"模型名称，默认为 {settings.default_model}",
+                        "description": f"Optional. Model name (default: {settings.default_model})",
                         "default": settings.default_model,
                     },
                     "size": {
                         "type": "string",
-                        "description": ("生成图像分辨率大小，Qwen-Image支持:[64x64,1664x1664]，默认为 '1024x1024'"),
+                        "description": "Optional. Output resolution in WIDTHxHEIGHT format. Qwen-Image supports 64x64 to 1664x1664. Default: 1024x1024",
                         "default": "1024x1024",
                     },
                     "output_filename": {
                         "type": "string",
-                        "description": "输出图片文件名，默认为 'result_image.jpg'",
+                        "description": "Optional. Local output filename (default: result_image.jpg)",
                         "default": "result_image.jpg",
                     },
                     "output_dir": {
                         "type": "string",
-                        "description": "输出目录路径，默认为 './outputs'",
+                        "description": "Optional. Local output directory path (default: ./outputs)",
                         "default": "./outputs",
                     },
                     "poll_interval_seconds": {
                         "type": "number",
-                        "description": "轮询基础间隔(秒)，默认取环境变量或 5",
+                        "description": "Optional. Base polling interval in seconds (default: env or 5)",
                     },
                     "max_poll_attempts": {
                         "type": "integer",
-                        "description": "最大轮询次数，默认取环境变量或 120（约 10 分钟）",
+                        "description": "Optional. Max poll attempts (default: env or 120, about 10 minutes)",
                     },
                     "poll_backoff": {
                         "type": "boolean",
-                        "description": "是否开启指数退避，默认取环境变量或 false",
+                        "description": "Optional. Enable exponential polling backoff (default: env or false)",
                     },
                     "max_poll_interval_seconds": {
                         "type": "number",
-                        "description": "指数退避的最大间隔(秒)，默认取环境变量或 30",
+                        "description": "Optional. Max polling interval in seconds when backoff is enabled (default: env or 30)",
                     },
                     "negative_prompt": {
                         "type": "string",
-                        "description": "负向提示词，可选",
+                        "description": "Optional. Negative prompt to suppress unwanted styles/artifacts",
                     },
                     "seed": {
                         "type": "integer",
-                        "description": "随机种子，可选",
+                        "description": "Optional. Random seed for reproducibility",
                     },
                 },
                 "required": ["prompt"],

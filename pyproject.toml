@@ -31,7 +31,7 @@ build-backend = "hatchling.build"
 packages = ["src/modelscope_image_gen"]
 
 [tool.ruff]
-line-length = 140
+line-length = 200
 target-version = "py312"
 
 [tool.ruff.lint]
