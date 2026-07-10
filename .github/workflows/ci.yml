@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "rebuild/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.28"
+          enable-cache: true
+      - name: Install Python
+        run: uv python install 3.14
+      - name: Sync
+        run: uv sync --locked --all-groups
+      - name: Format
+        run: uv run ruff format --check
+      - name: Lint
+        run: uv run ruff check
+      - name: Types
+        run: uv run ty check
+      - name: Tests
+        run: uv run pytest
+      - name: Build
+        run: uv build --no-sources
+      - name: Wheel smoke test
+        shell: bash
+        run: |
+          uv venv .wheel-smoke --python 3.14
+          uv pip install --python .wheel-smoke dist/*.whl
+          .wheel-smoke/bin/modelscope-image-gen-mcp --version || .wheel-smoke/Scripts/modelscope-image-gen-mcp.exe --version
