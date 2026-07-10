@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # pyright: reportMissingImports=false, reportAttributeAccessIssue=false
+import json
 from typing import Any
 
 import httpx
@@ -123,20 +124,13 @@ def build_error_payload(
 
 
 def _build_error_text(title: str, payload: dict[str, Any]) -> str:
-    lines = [
-        title,
-        f"stage: {payload['stage']}",
-        f"reason_code: {payload['reason_code']}",
-        f"category: {payload['category']}",
-        f"retryable: {payload['retryable']}",
-    ]
-    if payload.get("retry_after_seconds") is not None:
-        lines.append(f"retry_after_seconds: {payload['retry_after_seconds']}")
+    mirrored = {"ok": False, "error": payload}
+    return f"{title}\n\nJSON:\n{json.dumps(mirrored, ensure_ascii=False)}"
 
-    for field in ["status_code", "request_id", "detail", "suggestion", "body"]:
-        if field in payload and payload[field] is not None:
-            lines.append(f"{field}: {payload[field]}")
-    return "\n".join(lines)
+
+def _build_success_text(message: str, data: dict[str, Any]) -> str:
+    mirrored = {"ok": True, "data": data}
+    return f"{message}\n\nJSON:\n{json.dumps(mirrored, ensure_ascii=False)}"
 
 
 def build_tool_error_result(title: str, **kwargs: Any) -> types.CallToolResult:
@@ -159,6 +153,6 @@ def build_tool_error_result_from_payload(title: str, payload: dict[str, Any]) ->
 def build_tool_success_result(message: str, data: dict[str, Any]) -> types.CallToolResult:
     return types.CallToolResult(
         isError=False,
-        content=[types.TextContent(type="text", text=message)],
+        content=[types.TextContent(type="text", text=_build_success_text(message, data))],
         structuredContent={"ok": True, "data": data},
     )
