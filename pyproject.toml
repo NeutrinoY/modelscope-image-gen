@@ -1,0 +1,57 @@
+[project]
+name = "modelscope-image-gen-mcp"
+version = "0.2.0"
+description = "Local-first MCP server for reliable ModelScope image generation"
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+license = "MIT"
+dependencies = [
+    "mcp==2.0.0b1",
+    "anyio>=4.14,<5",
+    "httpx>=0.28.1,<1",
+    "pydantic>=2.13.4,<2.14",
+    "pydantic-settings>=2.14,<3",
+    "aiosqlite>=0.22,<1",
+    "platformdirs>=4,<5",
+    "Pillow>=12.3,<13",
+]
+
+[project.scripts]
+modelscope-image-gen-mcp = "modelscope_image_gen.cli:main"
+
+[dependency-groups]
+dev = [
+    "mcp[cli]==2.0.0b1",
+    "pytest>=9,<10",
+    "pytest-cov",
+    "ruff>=0.14,<0.15",
+    "ty==0.0.58",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv]
+required-version = ">=0.11.28,<0.12"
+prerelease = "allow"
+
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+extend-exclude = ["legacy"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "ASYNC", "RUF"]
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+markers = [
+    "live: requires explicit ModelScope credentials and network access",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["modelscope_image_gen"]

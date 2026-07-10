@@ -356,10 +356,10 @@ uv --version
 uv self update
 uv --version
 uv lock
-uv sync --locked --all-groups
+uv sync --locked --all-groups --no-install-project
 ```
 
-Expected: uv is within `>=0.11.28,<0.12`; Python 3.14 is selected; `mcp==2.0.0b1` and `mcp-types==2.0.0b1` resolve because prereleases are explicitly allowed; Pydantic remains `<2.14`.
+Expected: uv is within `>=0.11.28,<0.12`; Python 3.14 is selected; dependencies sync without installing the not-yet-created root package; `mcp==2.0.0b1` and `mcp-types==2.0.0b1` resolve because prereleases are explicitly allowed; Pydantic remains `<2.14`.
 
 - [ ] **Step 5: Verify metadata and commit**
 
