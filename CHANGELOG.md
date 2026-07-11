@@ -20,7 +20,10 @@ The current source tree targets `0.2.1`. Until a `v0.2.1` tag is created, these 
 - Replaced persisted absolute artifact paths with controlled relative paths and application-level resolved views.
 - Reduced `list_image_generations` to a privacy-minimized SQLite summary projection.
 - Centralized application next-step policy while keeping MCP tool-name mapping inside the adapter.
-- Standardized source-checkout host configuration on `uv --directory ... run modelscope-image-gen-mcp`.
+- Made GitHub source installation through `uvx --from git+https://...` the documented user path; local source checkout remains the development path.
+- Deferred PyPI, TestPyPI, MCP Registry, and GitHub Release work until an independent distribution channel is justified.
+- Removed the unpublished `server.json` manifest because it referenced a PyPI distribution owned by another project.
+- Updated CI to current `actions/checkout@v7` and `astral-sh/setup-uv@v8`, with read-only checkout, duplicate-run cancellation, and job time limits.
 
 ### Security
 
@@ -32,6 +35,7 @@ The current source tree targets `0.2.1`. Until a `v0.2.1` tag is created, these 
 
 - Exercised all five tools through real ModelScope workflows and multiple real stdio MCP hosts.
 - Verified 1024×1024 and 768×768 PNG generation, SHA-256 consistency, idempotent fetches, and installed-wheel stdio startup.
+- Verified remote Git installation from the pushed rebuild branch with `uvx --prerelease=allow --from ...`, returning version `0.2.1`.
 - Expanded the default automated suite to 39 tests plus one opt-in live test.
 
 ## [0.2.0] - 2026-07-11
@@ -78,7 +82,7 @@ The current source tree targets `0.2.1`. Until a `v0.2.1` tag is created, these 
 - Passed formatting, lint, type checking, automated tests, package builds, package-content audits, and isolated-wheel startup.
 - Passed the official in-memory MCP client contract path and a real submit → check → fetch workflow with the default model.
 
-The repository tag records the source milestone. Availability through PyPI or the MCP Registry is a separate publication step and must not be inferred from this entry.
+The repository tag records the `0.2.0` source milestone; no PyPI or MCP Registry publication was part of that release.
 
 ## [0.1.0] - 2026-03-10
 

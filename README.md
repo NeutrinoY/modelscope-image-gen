@@ -21,14 +21,12 @@ ModelScope Image Gen MCP turns that uncertainty into a clear workflow: **submit 
 
 ## 🚀 Quick start
 
-### 1. Prepare the source environment
+### 1. Prepare uv and Python
 
-From the source checkout, use Python 3.14 with `uv >=0.11.28,<0.12`:
+Install `uv >=0.11.28,<0.12`, make sure `uvx` is on `PATH`, and prepare Python 3.14:
 
 ```bash
 uv python install 3.14
-uv sync --locked
-uv run modelscope-image-gen-mcp --version
 ```
 
 ### 2. Configure the token
@@ -41,14 +39,61 @@ MODELSCOPE_SDK_TOKEN=replace-with-your-modelscope-token
 
 Do not pass the token as a tool argument or commit it to the repository. A missing token does not prevent the server from starting; local listing, persisted terminal Jobs, and existing artifacts remain readable.
 
-### 3. Connect an MCP host
+### 3. Connect an MCP host directly to GitHub
 
-Replace the path with the absolute path to this source checkout:
+The current installation path uses this repository as the package source; no local clone or PyPI package is required:
 
 ```json
 {
   "mcpServers": {
     "modelscope-image-gen": {
+      "command": "uvx",
+      "args": [
+        "--prerelease=allow",
+        "--from",
+        "git+https://github.com/NeutrinoY/modelscope-image-gen.git@main",
+        "modelscope-image-gen-mcp"
+      ],
+      "env": {
+        "MODELSCOPE_SDK_TOKEN": "replace-with-your-modelscope-token"
+      }
+    }
+  }
+}
+```
+
+Save the configuration and restart the host; it should discover five tools. On first use, uv fetches the repository, builds the package, and creates an isolated cached tool environment. Later starts normally reuse that cache.
+
+`--prerelease=allow` is currently required because the project uses the MCP Python SDK `2.0.0b1`. It can be removed only after the project moves to a verified stable SDK release.
+
+> [!IMPORTANT]
+> The PyPI project named `modelscope-image-gen-mcp` is maintained separately and is not a release of this repository. Use the Git URL above rather than bare `uvx modelscope-image-gen-mcp`.
+
+Verify the remote installation without starting a long-lived MCP session:
+
+```bash
+uvx --prerelease=allow \
+  --from "git+https://github.com/NeutrinoY/modelscope-image-gen.git@main" \
+  modelscope-image-gen-mcp --version
+```
+
+The default `@main` reference follows the latest accepted source. Do not add `--refresh` to normal host configuration; use it explicitly only when an immediate cache refresh is intended. Replace `main` with a trusted tag or commit when an immutable installation is required.
+
+<details>
+<summary><strong>Develop from a local source checkout</strong></summary>
+
+```bash
+uv python install 3.14
+uv sync --locked --all-groups
+uv run modelscope-image-gen-mcp --version
+```
+
+For a local MCP host configuration, replace the path below with the absolute path to the checkout:
+
+```json
+{
+  "mcpServers": {
+    "modelscope-image-gen-dev": {
       "command": "uv",
       "args": [
         "--directory",
@@ -64,15 +109,9 @@ Replace the path with the absolute path to this source checkout:
 }
 ```
 
-`uv --directory` selects the source directory without relying on a host-specific `cwd` field. Save the configuration and restart the host; it should discover five tools.
+`uv --directory` avoids relying on a host-specific `cwd` field. Use forward slashes in Windows paths.
 
-Use forward slashes in Windows paths. On macOS and Linux, use a path such as `/absolute/path/to/modelscope-image-gen`.
-
-You can also start the stdio server directly:
-
-```bash
-uv run modelscope-image-gen-mcp
-```
+</details>
 
 `stdout` is reserved for MCP protocol traffic. Runtime logs go to `stderr`.
 
@@ -388,6 +427,9 @@ See [.env.example](.env.example) for a copyable template. Environment changes re
 
 | Symptom | What to do |
 |---|---|
+| uvx reports that `mcp==2.0.0b1` or `mcp-types==2.0.0b1` cannot be resolved | Confirm that `--prerelease=allow` appears before `--from` in the host args |
+| Git installation cannot fetch or build | Check GitHub access, the repository owner/ref, uv `>=0.11.28,<0.12`, and Python 3.14; run the documented `--version` command outside the host |
+| The host still runs older cached source | Stop the host, run the `--version` command once with `--refresh`, then restart; do not make refresh the permanent default |
 | `MODELSCOPE_TOKEN_MISSING` | Set the token and restart the server; local listing still works |
 | `SUBMISSION_OUTCOME_UNKNOWN` | Do not automatically resubmit; inspect the existing Job and diagnostic request ID |
 | `NETWORK_ERROR` / `UPSTREAM_HTTP_ERROR` during check | The Job keeps its prior state; follow `retryable`, `retry_after_seconds`, and `next_action` |

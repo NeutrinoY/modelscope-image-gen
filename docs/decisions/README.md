@@ -13,6 +13,12 @@
 - [通用项目连续性元指南](../agent-project-continuity-meta-guide.md)
 - [项目维护与交接手册](../maintenance/README.md)
 
+## 已接受决策
+
+| 编号 | 决策 | 状态 | 日期 |
+|---|---|---|---|
+| [0001](0001-use-git-source-distribution.md) | 当前正式安装路径采用 Git 源码与 `uvx --from` | Accepted | 2026-07-12 |
+
 ## 何时必须记录
 
 以下变化通常需要决策记录：

@@ -2,14 +2,20 @@
 
 ## Supported versions
 
-Security fixes are developed for the current `0.2.x` source line and the latest `0.2.x` repository release. The archived prototype is retained for historical reference only.
+Security fixes are developed for the current `0.2.x` source line on this repository. The archived prototype is retained for historical reference only.
 
 | Version | Security support |
 |---|---|
-| Current `0.2.x` source and latest `0.2.x` release | Supported |
+| Current `main` / `0.2.x` source line | Supported |
 | `legacy/v0.1.0` | Not supported |
 
 Only code distributed from this repository is covered by this policy. The project currently published on PyPI under the name `modelscope-image-gen-mcp` is maintained separately and is **not** a release of this repository.
+
+## Git source identity
+
+The documented installation path executes source obtained from `github.com/NeutrinoY/modelscope-image-gen`. Verify the repository owner and URL before placing them in an MCP host configuration; do not substitute an unreviewed fork.
+
+The default `@main` reference is intentionally movable and follows the latest accepted source. Operators that require an immutable or auditable installation should replace `main` with a trusted tag or commit. uv caches Git and tool data, so use cache refresh options deliberately rather than forcing a network refresh on every host start.
 
 ## Reporting a vulnerability
 
@@ -44,7 +50,7 @@ If a token may have been exposed:
 1. Revoke or rotate it immediately in ModelScope.
 2. Stop MCP host and server processes that inherited the old environment.
 3. Remove the token from host configuration, shell history, logs, screenshots, and CI secrets.
-4. Inspect repository history and build artifacts before publishing or sharing them.
+4. Inspect repository history, MCP host configuration, uv caches, and build artifacts before publishing or sharing them.
 5. Restart the server only after installing the replacement token.
 
 ## Filesystem and resource boundary
