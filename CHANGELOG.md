@@ -4,7 +4,9 @@ This file records user-visible behavior, compatibility boundaries, and release-r
 
 ## [Unreleased]
 
-The current source tree targets `0.2.1`. Until a `v0.2.1` tag is created, these changes describe the next repository release rather than a published release.
+## [0.2.1] - 2026-07-12
+
+`0.2.1` hardens the completed rebuild for real ModelScope workflows, multiple stdio MCP hosts, remote Git installation, and long-term maintenance.
 
 ### Fixed
 
