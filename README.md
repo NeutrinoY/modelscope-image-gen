@@ -4,7 +4,7 @@
 
 A local-first MCP v2 server for reliable ModelScope text-to-image generation. It turns ModelScope's asynchronous API into persistent, recoverable Agent workflows with SQLite job state, safe local artifacts, structured errors, and multi-image results.
 
-> Status: the `0.2.0` rebuild is implemented on the rebuild branch. A real installed-wheel stdio run completed submit → check → fetch with the default `krea/Krea-2-Turbo` model and produced a validated 1024×1024 PNG. External Host, Ubuntu CI, Registry, and PyPI publication are still separate release gates.
+> Status: `0.2.1` is a reliability and integration update to the completed rebuild. Real submit → check → fetch and blocking generate workflows have passed with `krea/Krea-2-Turbo`, and all five tools have been exercised from two real stdio MCP Hosts, including Claude Code. Ubuntu CI, Registry, and PyPI publication remain separate release gates.
 
 [简体中文](README.zh-CN.md)
 
@@ -86,8 +86,12 @@ For development from this checkout:
   "mcpServers": {
     "modelscope-image-gen-dev": {
       "command": "uv",
-      "args": ["run", "modelscope-image-gen-mcp"],
-      "cwd": "/absolute/path/to/modelscope-image-gen",
+      "args": [
+        "--directory",
+        "/absolute/path/to/modelscope-image-gen",
+        "run",
+        "modelscope-image-gen-mcp"
+      ],
       "env": {
         "MODELSCOPE_SDK_TOKEN": "replace-with-your-modelscope-token"
       }
@@ -96,7 +100,7 @@ For development from this checkout:
 }
 ```
 
-Use a Windows absolute path for `cwd` on Windows.
+Use a Windows absolute path such as `D:/Code/modelscope-image-gen` for the `--directory` argument on Windows. This form works in Hosts that expose only command, arguments, and environment fields.
 
 ## Workflow model
 

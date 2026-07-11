@@ -31,7 +31,7 @@ def test_cli_version_does_not_require_token() -> None:
         check=False,
     )
     assert completed.returncode == 0
-    assert completed.stdout.strip() == "0.2.0"
+    assert completed.stdout.strip() == "0.2.1"
     assert completed.stderr == ""
 
 

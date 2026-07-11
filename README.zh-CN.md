@@ -104,12 +104,18 @@ MODELSCOPE_SDK_TOKEN=replace-with-your-modelscope-token
   "mcpServers": {
     "modelscope-image-gen-dev": {
       "command": "uv",
-      "args": ["run", "modelscope-image-gen-mcp"],
-      "cwd": "D:/absolute/path/to/modelscope-image-gen"
+      "args": [
+        "--directory",
+        "D:/absolute/path/to/modelscope-image-gen",
+        "run",
+        "modelscope-image-gen-mcp"
+      ]
     }
   }
 }
 ```
+
+`--directory` 由 uv 负责切换源码工作目录，不依赖 MCP Host 是否额外支持 `cwd` 字段，因此更适合作为跨 Host 的源码运行配置。
 
 ## 🔄 它如何工作？
 
@@ -550,6 +556,25 @@ cli       → 启动 bootstrap
 
 ## 🕰️ 版本演进
 
+### 0.2.1 — 可靠性、边界与真实 Host 加固
+
+**2026-07-11**
+
+0.2.1 在完整重构基线之上修复真实审阅中发现的问题，并通过多个实际 ModelScope 工作流和两个真实 stdio MCP Host 验证五工具体验。
+
+这一版本重点包括：
+
+- 严格验证 Provider 成功响应，避免畸形 `output_images` 被误判为多图片；
+- 使用 AnyIO cancel scope 约束 blocking generate 的本地等待预算；
+- 多图片 fetch 按图片独立短事务提交，并保护取消前已完成的产物；
+- 将图片 HTTP 生命周期收回 ModelScope Provider，Artifact Store 只处理字节、验证、路径和原子保存；
+- 将绝对路径移出领域和数据库，通过应用视图解析本地文件位置；
+- list 使用摘要投影，不加载 prompt、Provider locator 和完整图片聚合；
+- 拆分 SQLite row mapping、pagination、Provider download 和 HTTP 错误映射；
+- 加固 UUID、相对路径、SHA-256、symlink、Windows junction、损坏文件恢复和启动资源释放；
+- 五个 MCP 工具在当前 Host 与 Claude Code 中完成真实调用，异步与阻塞生图均成功；
+- 源码 Host 配置统一推荐 `uv --directory ... run modelscope-image-gen-mcp`。
+
 ### 0.2.0 — 从可工作的工具，到可恢复的本地任务系统
 
 **2026-07-11**
@@ -625,7 +650,7 @@ uv run pytest -m live
 | 隔离 wheel 安装 | 已通过 |
 | 真实 stdio 子进程 | 已通过 |
 | 真实 ModelScope 生成 | 已通过，默认模型成功生成并保存 1024×1024 PNG |
-| 外部 MCP Host | 待验证 |
+| 外部 MCP Host | 已通过两个真实 stdio Host，包括 Claude Code；五工具均已调用 |
 | Ubuntu CI 实际运行 | 待验证 |
 | PyPI / MCP Registry 实际发布 | 尚未发布 |
 

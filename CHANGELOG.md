@@ -2,6 +2,36 @@
 
 This file records user-visible changes, compatibility boundaries, and release verification for ModelScope Image Gen MCP. It summarizes releases rather than mirroring individual commits.
 
+## [0.2.1] - 2026-07-11
+
+0.2.1 hardens the 0.2.0 rebuild after local code review, live ModelScope runs, and end-to-end use from multiple real MCP Hosts. It preserves the five-tool wire contract and focuses on correctness, cancellation safety, storage boundaries, and source-checkout usability.
+
+### Reliability fixes
+
+- Reject malformed successful Provider responses instead of interpreting a single image URL as a sequence of characters.
+- Enforce the `generate_image` local wait budget across status checks and artifact fetching with AnyIO cancellation scopes.
+- Persist each fetched image through its own short, cancellation-shielded transaction so completed artifacts survive sibling cancellation.
+- Preserve stable `PERSISTENCE_ERROR` and `CONCURRENT_MODIFICATION` reason codes at the MCP boundary.
+- Isolate `.env.local` tests from an externally configured live-test Token.
+
+### Architecture and security
+
+- Moved image HTTP response lifecycles into the ModelScope Provider and kept the Artifact Store provider-neutral.
+- Removed absolute paths from persisted domain artifacts and introduced application views for resolved local paths.
+- Replaced full aggregate loading in `list_image_generations` with a privacy-minimized summary projection.
+- Split SQLite row mapping and pagination from the Repository, and split image download and HTTP retry mapping from the Provider.
+- Added canonical UUID, relative path, SHA-256, symlink, and Windows junction/reparse-point validation.
+- Strengthened atomic replacement, bounded inspection of existing files, corrupted-artifact recovery, startup resource cleanup, and structured lifecycle logging.
+- Centralized application next-step policy while keeping MCP tool-name mapping in the adapter.
+
+### Verification and developer experience
+
+- Passed all five tools through real ModelScope workflows: asynchronous submit/check/fetch, blocking generate, and local list recovery.
+- Verified successful operation from two real stdio MCP Hosts, including Claude Code, in addition to the official in-memory MCP Client.
+- Verified real 1024×1024 and 768×768 PNG generation, local metadata, SHA-256 consistency, and idempotent fetch behavior.
+- Standardized source-checkout Host configuration on `uv --directory ... run modelscope-image-gen-mcp`, avoiding Host-specific `cwd` support.
+- Expanded the automated suite to 39 default tests plus an explicit live ModelScope test, and revalidated Ruff, ty, builds, wheel contents, and isolated wheel installation.
+
 ## [0.2.0] - 2026-07-11
 
 0.2.0 is a complete rebuild of the project. It turns the first working ModelScope wrapper into a persistent, recoverable local task system designed for MCP Agents and long-running image generation.
@@ -22,15 +52,12 @@ The release focuses on preserving clear local truth: what was submitted, what Mo
 - Persisted submission intent before contacting ModelScope so process interruption does not silently erase the local record.
 - Added explicit recovery for uncertain submissions and prohibited automatic resubmission when the first request may already have reached ModelScope.
 - Preserved active Job state across temporary network failures, local wait limits, and unknown Provider status values.
-- Mapped SQLite failures and optimistic conflicts to stable persistence reason codes instead of generic internal errors.
 
 ### Artifact delivery
 
 - Replaced Agent-controlled output directories and filenames with a Server-controlled local Artifact Store.
 - Added streaming download limits, image validation, pixel limits, SHA-256 metadata, atomic file commits, and safe path derivation.
-- Kept image HTTP response lifecycles in the ModelScope Provider while the Artifact Store consumes provider-neutral bytes.
 - Made available artifacts idempotent: repeated fetch calls return existing files instead of downloading or overwriting them again.
-- Persisted each multi-image fetch result in its own short transaction so completed images survive sibling cancellation.
 - Kept formal Job data and generated images outside package and `uvx` environments so upgrades do not remove user artifacts.
 
 ### MCP and Agent experience
@@ -39,7 +66,6 @@ The release focuses on preserving clear local truth: what was submitted, what Mo
 - Added concrete Pydantic input and output contracts for every tool.
 - Standardized structured `ok/data/error` envelopes and concise TextContent summaries.
 - Added strong next actions for check and fetch handoff, retry timing, and uncertain-submission warnings.
-- Enforced the blocking wait budget across status checks and artifact fetching, and rejected malformed Provider image lists.
 - Kept Provider image locators, prompts, raw upstream bodies, and internal exceptions out of normal MCP text responses.
 
 ### Compatibility changes
