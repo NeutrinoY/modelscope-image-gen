@@ -2,42 +2,51 @@
 
 ## Supported versions
 
-Security fixes are developed for the current `0.2.x` line. The archived `0.1.0` implementation under `legacy/` is not supported and must not be deployed as the current server.
+Security fixes are developed for the current `0.2.x` source line and the latest `0.2.x` repository release. The archived prototype is retained for historical reference only.
+
+| Version | Security support |
+|---|---|
+| Current `0.2.x` source and latest `0.2.x` release | Supported |
+| `legacy/v0.1.0` | Not supported |
+
+Only code distributed from this repository is covered by this policy. The project currently published on PyPI under the name `modelscope-image-gen-mcp` is maintained separately and is **not** a release of this repository.
 
 ## Reporting a vulnerability
 
-Please use GitHub's private security advisory reporting for this repository. Do not open a public issue containing a live ModelScope token, Authorization header, signed image URL, private prompt, generated private image, database, WAL/SHM file, or exploitable filesystem path.
+Use GitHub's private vulnerability reporting when **Security → Report a vulnerability** is available for this repository. If that option is unavailable, open a minimal public issue asking the maintainer to establish a private reporting channel. Do not include vulnerability details or sensitive data in that issue.
 
-Include, when safe:
+Please include, when safe:
 
-- affected version or commit;
-- operating system and MCP Host;
-- reproduction steps using placeholders rather than live secrets;
-- expected and observed behavior;
-- impact and suggested mitigation.
+- the affected version, tag, or commit;
+- the operating system and MCP host;
+- reproduction steps using placeholders instead of live secrets or private data;
+- the expected and observed behavior;
+- the likely impact and any known mitigation.
+
+Do not disclose a live ModelScope token, Authorization header, signed image URL, private prompt, generated private image, SQLite database, WAL/SHM file, or exploitable filesystem path in a public issue.
 
 ## Sensitive local data
 
-The server intentionally persists enough information to recover jobs. Treat the following as sensitive:
+The server intentionally persists enough information to recover Jobs across MCP calls and process restarts. Treat the following as sensitive:
 
 - `state.sqlite3`, its WAL/SHM files, and backups;
 - prompts and negative prompts stored in SQLite;
-- ModelScope task references and signed provider image locators stored in SQLite;
+- ModelScope Task references and signed provider image locators stored in SQLite;
 - generated images and temporary artifact files;
-- MCP Host configuration containing `MODELSCOPE_SDK_TOKEN`.
+- MCP host configuration containing `MODELSCOPE_SDK_TOKEN`.
 
-The token and Authorization header must never be stored in SQLite or returned by tools. stdout is reserved for MCP protocol traffic; logs are written to stderr.
+The token and Authorization header must never be stored in SQLite or returned by tools. `stdout` is reserved for MCP protocol traffic; runtime logs are written to `stderr` and should still be handled as operational data.
 
 ## Token exposure response
 
-If a token is exposed:
+If a token may have been exposed:
 
-1. revoke or rotate it immediately in ModelScope;
-2. stop MCP Host processes that inherited the old environment;
-3. remove the token from Host configuration, shell history, logs, screenshots, and CI secrets;
-4. inspect repository history and build artifacts before publishing anything;
-5. restart the server only after installing the replacement token.
+1. Revoke or rotate it immediately in ModelScope.
+2. Stop MCP host and server processes that inherited the old environment.
+3. Remove the token from host configuration, shell history, logs, screenshots, and CI secrets.
+4. Inspect repository history and build artifacts before publishing or sharing them.
+5. Restart the server only after installing the replacement token.
 
-## Filesystem boundary
+## Filesystem and resource boundary
 
-Artifact files must remain under the configured artifact root. Reports involving path traversal, symlink/reparse-point escape, unsafe cleanup, unbounded downloads, decompression bombs, or unintended file overwrite are considered security-sensitive.
+Artifact files must remain under the configured Artifact Root. Reports involving path traversal, symlink or Windows reparse-point escape, unsafe cleanup, unintended overwrite, unbounded downloads, decompression bombs, or bypasses of byte and pixel limits are security-sensitive.

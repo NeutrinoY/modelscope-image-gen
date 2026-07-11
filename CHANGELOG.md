@@ -1,128 +1,105 @@
 # Changelog
 
-This file records user-visible changes, compatibility boundaries, and release verification for ModelScope Image Gen MCP. It summarizes releases rather than mirroring individual commits.
+This file records user-visible behavior, compatibility boundaries, and release-relevant fixes. It does not mirror individual commits or replace the project history in the README.
 
-## [0.2.1] - 2026-07-11
+## [Unreleased]
 
-0.2.1 hardens the 0.2.0 rebuild after local code review, live ModelScope runs, and end-to-end use from multiple real MCP Hosts. It preserves the five-tool wire contract and focuses on correctness, cancellation safety, storage boundaries, and source-checkout usability.
+The current source tree targets `0.2.1`. Until a `v0.2.1` tag is created, these changes describe the next repository release rather than a published release.
 
-### Reliability fixes
+### Fixed
 
-- Reject malformed successful Provider responses instead of interpreting a single image URL as a sequence of characters.
-- Enforce the `generate_image` local wait budget across status checks and artifact fetching with AnyIO cancellation scopes.
-- Persist each fetched image through its own short, cancellation-shielded transaction so completed artifacts survive sibling cancellation.
-- Preserve stable `PERSISTENCE_ERROR` and `CONCURRENT_MODIFICATION` reason codes at the MCP boundary.
-- Isolate `.env.local` tests from an externally configured live-test Token.
+- Reject malformed successful ModelScope responses instead of treating a single image URL as a sequence of characters.
+- Apply the `generate_image` local wait budget across status checks and artifact fetching.
+- Persist each fetched image in its own short, cancellation-shielded transaction so completed artifacts survive sibling cancellation.
+- Preserve stable `PERSISTENCE_ERROR` and `CONCURRENT_MODIFICATION` codes at the MCP boundary.
+- Isolate `.env.local` tests from externally configured live-test tokens.
 
-### Architecture and security
+### Changed
 
-- Moved image HTTP response lifecycles into the ModelScope Provider and kept the Artifact Store provider-neutral.
-- Removed absolute paths from persisted domain artifacts and introduced application views for resolved local paths.
-- Replaced full aggregate loading in `list_image_generations` with a privacy-minimized summary projection.
-- Split SQLite row mapping and pagination from the Repository, and split image download and HTTP retry mapping from the Provider.
-- Added canonical UUID, relative path, SHA-256, symlink, and Windows junction/reparse-point validation.
-- Strengthened atomic replacement, bounded inspection of existing files, corrupted-artifact recovery, startup resource cleanup, and structured lifecycle logging.
-- Centralized application next-step policy while keeping MCP tool-name mapping in the adapter.
+- Moved image HTTP-response lifecycles into the ModelScope Provider while keeping the Artifact Store provider-neutral.
+- Replaced persisted absolute artifact paths with controlled relative paths and application-level resolved views.
+- Reduced `list_image_generations` to a privacy-minimized SQLite summary projection.
+- Centralized application next-step policy while keeping MCP tool-name mapping inside the adapter.
+- Standardized source-checkout host configuration on `uv --directory ... run modelscope-image-gen-mcp`.
 
-### Verification and developer experience
+### Security
 
-- Passed all five tools through real ModelScope workflows: asynchronous submit/check/fetch, blocking generate, and local list recovery.
-- Verified successful operation from two real stdio MCP Hosts, including Claude Code, in addition to the official in-memory MCP Client.
-- Verified real 1024×1024 and 768×768 PNG generation, local metadata, SHA-256 consistency, and idempotent fetch behavior.
-- Standardized source-checkout Host configuration on `uv --directory ... run modelscope-image-gen-mcp`, avoiding Host-specific `cwd` support.
-- Expanded the automated suite to 39 default tests plus an explicit live ModelScope test, and revalidated Ruff, ty, builds, wheel contents, and isolated wheel installation.
+- Added canonical UUID, relative-path, SHA-256, symlink, and Windows junction/reparse-point validation.
+- Hardened atomic replacement, bounded inspection of existing files, corrupted-artifact recovery, and startup cleanup.
+- Kept prompts, provider image locators, raw upstream bodies, and absolute artifact paths out of list results and default logs.
+
+### Verified
+
+- Exercised all five tools through real ModelScope workflows and multiple real stdio MCP hosts.
+- Verified 1024×1024 and 768×768 PNG generation, SHA-256 consistency, idempotent fetches, and installed-wheel stdio startup.
+- Expanded the default automated suite to 39 tests plus one opt-in live test.
 
 ## [0.2.0] - 2026-07-11
 
-0.2.0 is a complete rebuild of the project. It turns the first working ModelScope wrapper into a persistent, recoverable local task system designed for MCP Agents and long-running image generation.
+`0.2.0` is a complete rebuild. It turns the first working ModelScope wrapper into a persistent, recoverable local task system for MCP agents and long-running image generation.
 
-The release focuses on preserving clear local truth: what was submitted, what ModelScope has confirmed, what remains uncertain, which artifacts are available, and what an Agent should do next.
-
-### Highlights
+### Added
 
 - Established the fixed five-tool workflow: `submit_image_generation`, `check_image_generation`, `fetch_image_generation_result`, `list_image_generations`, and `generate_image`.
-- Made submit → check → fetch the recommended default for schedulable Agents while retaining a blocking convenience tool.
-- Added local task discovery so a lost Job ID no longer means a lost workflow.
-- Added multi-image Jobs, partial artifact success, and independent retries for unfinished images.
+- Added local Job discovery, multi-image Jobs, partial artifact success, and independent retries for unfinished images.
+- Added concrete Pydantic input and output contracts, structured `ok/data/error` envelopes, concise text summaries, and explicit next actions.
+- Added a controlled Artifact Store with streaming byte limits, image and pixel validation, SHA-256 metadata, and atomic file commits.
+
+### Changed
+
+- Replaced per-Job JSON files with a versioned SQLite store that reconstructs complete Job and image state.
+- Made submit → check → fetch the recommended workflow while retaining `generate_image` as a blocking convenience tool.
+- Persisted submission intent before the external request and added explicit recovery for uncertain outcomes.
+- Separated upstream Job success from per-image artifact delivery.
 - Changed the default model to `krea/Krea-2-Turbo`.
-
-### Persistence and recovery
-
-- Replaced isolated per-Job JSON files with a versioned SQLite store that reconstructs complete Job and image state.
-- Persisted submission intent before contacting ModelScope so process interruption does not silently erase the local record.
-- Added explicit recovery for uncertain submissions and prohibited automatic resubmission when the first request may already have reached ModelScope.
-- Preserved active Job state across temporary network failures, local wait limits, and unknown Provider status values.
-
-### Artifact delivery
-
-- Replaced Agent-controlled output directories and filenames with a Server-controlled local Artifact Store.
-- Added streaming download limits, image validation, pixel limits, SHA-256 metadata, atomic file commits, and safe path derivation.
-- Made available artifacts idempotent: repeated fetch calls return existing files instead of downloading or overwriting them again.
-- Kept formal Job data and generated images outside package and `uvx` environments so upgrades do not remove user artifacts.
-
-### MCP and Agent experience
-
-- Moved to MCP Python SDK v2 and a Tools-only low-level Server.
-- Added concrete Pydantic input and output contracts for every tool.
-- Standardized structured `ok/data/error` envelopes and concise TextContent summaries.
-- Added strong next actions for check and fetch handoff, retry timing, and uncertain-submission warnings.
-- Kept Provider image locators, prompts, raw upstream bodies, and internal exceptions out of normal MCP text responses.
-
-### Compatibility changes
-
-0.2.0 intentionally does not provide a compatibility layer for the 0.1.0 interface.
-
-- `get_image_generation_status` was replaced by `check_image_generation`.
-- `get_image_generation_result` was replaced by `fetch_image_generation_result`.
-- `list_image_generations` was added for local discovery and recovery.
-- Image size changed from a `WIDTHxHEIGHT` string to a `{width, height}` object.
-- Agent-supplied output directories, output filenames, polling intervals, backoff, and maximum poll attempts were removed from tool inputs.
-- `timeout` was removed as a persisted Job state; a local wait limit now hands the active Job back to the caller.
-- Legacy JSON Job files are not migrated into the new SQLite store.
+- Moved to MCP Python SDK v2 and a tools-only low-level server.
 
 ### Security and privacy
 
-- Tokens and Authorization headers are excluded from persistence and tool output.
-- Default logs suppress HTTP request URLs so Provider task paths and image locators are not written to stderr.
-- Prompts, Provider image locators, raw upstream bodies, tracebacks, and artifact absolute paths are excluded from default logs.
-- Artifact paths are derived from controlled identifiers and remain inside the configured Artifact Root.
+- Removed agent-controlled output directories and filenames.
+- Excluded tokens and Authorization headers from persistence and tool output.
+- Excluded prompts, provider image locators, raw upstream bodies, tracebacks, and artifact absolute paths from default logs.
+- Kept artifacts under paths derived from controlled identifiers inside the configured Artifact Root.
 
-### Verification
+### Compatibility
 
-- Passed Ruff formatting and lint checks, ty type checking, automated tests, package builds, and package-content audits.
-- Passed the official in-memory MCP Client contract path.
-- Passed isolated wheel installation and real stdio subprocess smoke testing.
-- Completed a real ModelScope submit → check → fetch run with the default `krea/Krea-2-Turbo` model and saved a validated 1024×1024 PNG.
-- External MCP Host verification, Ubuntu CI execution, and actual PyPI/MCP Registry publication remain separate release operations.
+`0.2.0` intentionally does not provide a compatibility layer for `0.1.0`:
+
+- `get_image_generation_status` became `check_image_generation`.
+- `get_image_generation_result` became `fetch_image_generation_result`.
+- `list_image_generations` was added for local recovery.
+- Image size changed from a `WIDTHxHEIGHT` string to a `{width, height}` object.
+- Output paths, filenames, polling intervals, backoff, and maximum poll attempts were removed from tool inputs.
+- `timeout` was removed as a persisted Job state; a local wait limit now hands the active Job back to the caller.
+- Legacy JSON Job files are not migrated into the SQLite store.
+
+### Verified
+
+- Passed formatting, lint, type checking, automated tests, package builds, package-content audits, and isolated-wheel startup.
+- Passed the official in-memory MCP client contract path and a real submit → check → fetch workflow with the default model.
+
+The repository tag records the source milestone. Availability through PyPI or the MCP Registry is a separate publication step and must not be inferred from this entry.
 
 ## [0.1.0] - 2026-03-10
 
-0.1.0 established the first complete working direction for the project. The main implementation was created between the evening of March 9 and the early morning of March 10, moving from a new uv scaffold to an asynchronous ModelScope image-generation MCP service in a single development session.
+`0.1.0` established the project's first complete working direction in a single development session.
 
-### Highlights
+### Added
 
 - Connected ModelScope text-to-image generation to MCP.
-- Added a blocking `generate_image` tool for one-call generation.
-- Added asynchronous submission, status, and result tools for long-running work.
-- Stored Job state locally so later MCP calls could continue an earlier request.
-- Added structured success and error results with stage, retryability, retry timing, and request diagnostics.
+- Added blocking generation and asynchronous submit, status, and result tools.
+- Stored local Job state so later MCP calls could continue earlier work.
+- Added structured errors with stage, retryability, retry timing, and request diagnostics.
 - Added separate submit, status, and download timeouts.
-- Validated downloaded image bytes, including valid images returned as `application/octet-stream`.
-- Added automated tests for request construction, polling, errors, image decoding, and local saving.
+- Validated downloaded image bytes, including images returned as `application/octet-stream`.
 
 ### Historical limitations
 
-0.1.0 was a successful prototype, but its internal model still reflected the speed at which it was created:
+- Stored each Job in a separate JSON file using mutable dictionary state.
+- Coupled workflow code to MCP protocol types through a Mixin-based service.
+- Represented a local timeout as a terminal Job state.
+- Preserved only the first returned image.
+- Allowed agents to choose output directories and filenames.
+- Duplicated submission, polling, download, and error handling across blocking and asynchronous paths.
 
-- Job state was stored in one JSON file per task and represented by mutable dictionaries.
-- Workflow code was assembled through a Mixin-based service and returned MCP protocol types directly.
-- Timeout was represented as a terminal Job state.
-- Only the first returned image was preserved.
-- Agents could choose output directories and filenames.
-- Blocking and asynchronous paths duplicated parts of submission, polling, download, and error handling.
-
-These limitations became the design input for the 0.2.0 rebuild rather than compatibility requirements.
-
-### Archive
-
-On July 10, 2026, the 0.1.0 documentation and structured payload presentation were polished before the implementation was archived as `legacy/v0.1.0`. The annotated archive tag points to the final 0.1.0 baseline, while the release date remains March 10, when the working version was originally completed.
+These limitations became design input for the `0.2.0` rebuild rather than compatibility requirements. The final prototype baseline is preserved read-only under [`legacy/v0.1.0/`](legacy/v0.1.0/).
