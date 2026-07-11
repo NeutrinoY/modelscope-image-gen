@@ -1,43 +1,81 @@
 [project]
 name = "modelscope-image-gen-mcp"
-version = "0.1.0"
-description = "Modern MCP server for ModelScope image generation"
+version = "0.2.1"
+description = "Local-first MCP v2 server for reliable ModelScope image generation"
 readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "mcp>=1.0.0",
-    "httpx>=0.27.0",
-    "Pillow>=10.0.0",
-    "pydantic>=2.7.0",
-    "pydantic-settings>=2.2.1",
-    "python-dotenv>=1.0.1",
+requires-python = ">=3.14,<3.15"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "NeutrinoY" }]
+keywords = ["mcp", "modelscope", "image-generation", "text-to-image", "agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
 ]
+dependencies = [
+    "mcp==2.0.0b1",
+    "anyio>=4.14,<5",
+    "httpx>=0.28.1,<1",
+    "pydantic>=2.13.4,<2.14",
+    "pydantic-settings>=2.14,<3",
+    "aiosqlite>=0.22,<1",
+    "platformdirs>=4,<5",
+    "Pillow>=12.3,<13",
+]
+
+[project.urls]
+Homepage = "https://github.com/NeutrinoY/modelscope-image-gen"
+Repository = "https://github.com/NeutrinoY/modelscope-image-gen"
+Issues = "https://github.com/NeutrinoY/modelscope-image-gen/issues"
+
+[project.scripts]
+modelscope-image-gen-mcp = "modelscope_image_gen.cli:main"
 
 [dependency-groups]
 dev = [
-    "ruff>=0.6.0",
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
+    "mcp[cli]==2.0.0b1",
+    "pytest>=9,<10",
+    "pytest-cov",
+    "ruff>=0.14,<0.15",
+    "ty==0.0.58",
 ]
 
-[project.scripts]
-modelscope-image-gen-mcp = "modelscope_image_gen.server:cli_main"
-
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.11.28,<0.12"]
+build-backend = "uv_build"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/modelscope_image_gen"]
+[tool.uv]
+required-version = ">=0.11.28,<0.12"
+prerelease = "allow"
 
 [tool.ruff]
-line-length = 200
-target-version = "py312"
+target-version = "py314"
+line-length = 120
+extend-exclude = ["legacy"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "N"]
+select = ["E", "F", "I", "B", "UP", "N", "ASYNC", "RUF"]
 
-[tool.pyright]
-include = ["main.py", "src", "tests"]
-extraPaths = ["src"]
-reportMissingImports = "none"
+[tool.pytest.ini_options]
+minversion = "9.0"
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+markers = [
+    "live: requires explicit ModelScope credentials and network access",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["modelscope_image_gen"]
+
+[tool.uv.build-backend]
+module-name = "modelscope_image_gen"
+module-root = "src"
+
+[tool.ty.src]
+include = ["src"]
+exclude = ["legacy"]

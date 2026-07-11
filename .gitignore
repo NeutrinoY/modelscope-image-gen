@@ -1,16 +1,20 @@
-# Python-generated files
 __pycache__/
-*.py[oc]
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 build/
 dist/
-wheels/
-*.egg-info
-
-# Virtual environments
-.venv
-
-# Runtime artifacts
-out/
-.modelscope-image-gen/
-.modelscope-image-gen-mcp/
+.venv/
+.env
+.env.*
+!.env.example
 outputs/
+.modelscope-image-gen/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.tmp
+.DS_Store

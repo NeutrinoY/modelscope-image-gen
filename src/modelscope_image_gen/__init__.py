@@ -1,5 +1,10 @@
-"""ModelScope image MCP server package."""
+"""ModelScope Image Gen MCP."""
 
-from .server import cli_main
+from importlib.metadata import PackageNotFoundError, version
 
-__all__ = ["cli_main"]
+try:
+    __version__ = version("modelscope-image-gen-mcp")
+except PackageNotFoundError:
+    __version__ = "0.2.1"
+
+__all__ = ["__version__"]
