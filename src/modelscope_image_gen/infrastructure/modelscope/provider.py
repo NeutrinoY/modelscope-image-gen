@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
+from modelscope_image_gen.application.ports.provider import ProviderImageStream
 from modelscope_image_gen.application.provider_outcomes import (
     ProviderFailed,
     ProviderPending,
@@ -26,7 +28,8 @@ from modelscope_image_gen.domain import (
     ProviderTaskReference,
 )
 
-_RETRYABLE = {408, 409, 425, 429, 500, 502, 503, 504}
+from .http_mapping import RETRYABLE_STATUS_CODES, retry_after_seconds
+from .image_download import ModelScopeImageDownloader
 
 
 class ModelScopeProvider:
@@ -38,12 +41,14 @@ class ModelScopeProvider:
         token: str,
         submit_timeout: float,
         status_timeout: float,
+        download_timeout: float,
     ) -> None:
         self._client = client
         self._api_base = api_base.rstrip("/") + "/"
         self._token = token
         self._submit_timeout = submit_timeout
         self._status_timeout = status_timeout
+        self._image_downloader = ModelScopeImageDownloader(client, download_timeout)
 
     def validate(self, request: GenerationRequest) -> DomainError | None:
         now = datetime.now(UTC)
@@ -63,6 +68,15 @@ class ModelScopeProvider:
                 category=ErrorCategory.VALIDATION,
                 retryable=False,
                 safe_message="The selected ModelScope model requires image dimensions between 64 and 1664 pixels.",
+                occurred_at=now,
+            )
+        if request.seed is not None and not 0 <= request.seed <= 2**31 - 1:
+            return DomainError(
+                code=ErrorCode.ARGUMENT_VALIDATION_FAILED,
+                stage=ErrorStage.VALIDATION,
+                category=ErrorCategory.VALIDATION,
+                retryable=False,
+                safe_message="The ModelScope image generation seed must be between 0 and 2147483647.",
                 occurred_at=now,
             )
         return None
@@ -107,13 +121,13 @@ class ModelScopeProvider:
             return SubmitAccepted(task_id.strip(), request_id, "SUBMITTED")
         except httpx.HTTPStatusError as exc:
             response = exc.response
-            retry_after = _retry_after(response.headers.get("Retry-After"))
+            retry_after = retry_after_seconds(response.headers.get("Retry-After"))
             return SubmitRejected(
                 DomainError(
                     code=ErrorCode.SUBMISSION_REJECTED,
                     stage=ErrorStage.SUBMIT,
                     category=ErrorCategory.UPSTREAM_HTTP,
-                    retryable=response.status_code in _RETRYABLE,
+                    retryable=response.status_code in RETRYABLE_STATUS_CODES,
                     retry_after_seconds=retry_after,
                     safe_message="ModelScope rejected the image generation request.",
                     occurred_at=datetime.now(UTC),
@@ -164,8 +178,8 @@ class ModelScopeProvider:
                     code=ErrorCode.UPSTREAM_HTTP_ERROR,
                     stage=ErrorStage.STATUS_CHECK,
                     category=ErrorCategory.UPSTREAM_HTTP,
-                    retryable=response.status_code in _RETRYABLE,
-                    retry_after_seconds=_retry_after(response.headers.get("Retry-After")),
+                    retryable=response.status_code in RETRYABLE_STATUS_CODES,
+                    retry_after_seconds=retry_after_seconds(response.headers.get("Retry-After")),
                     safe_message="The image generation status could not be refreshed.",
                     occurred_at=datetime.now(UTC),
                     provider_request_id=response.headers.get("X-Request-Id"),
@@ -203,9 +217,21 @@ class ModelScopeProvider:
             return ProviderRunning(request_id, status)
         if status == "SUCCEED":
             raw_images = data.get("output_images")
-            references = tuple(
-                ProviderImageReference(item, request_id) for item in raw_images or () if isinstance(item, str) and item
-            )
+            if not isinstance(raw_images, list) or any(
+                not isinstance(item, str) or not item.strip() for item in raw_images
+            ):
+                raise ProviderTemporaryError(
+                    DomainError(
+                        code=ErrorCode.UPSTREAM_RESPONSE_INVALID,
+                        stage=ErrorStage.STATUS_CHECK,
+                        category=ErrorCategory.UPSTREAM_CONTRACT,
+                        retryable=True,
+                        safe_message="ModelScope returned an invalid image result list.",
+                        occurred_at=datetime.now(UTC),
+                        provider_request_id=request_id,
+                    )
+                )
+            references = tuple(ProviderImageReference(item.strip(), request_id) for item in raw_images)
             return ProviderSucceeded(references, request_id, status)
         if status == "FAILED":
             return ProviderFailed(
@@ -233,16 +259,11 @@ class ModelScopeProvider:
         )
         return ProviderUnknownStatus(error, request_id, status)
 
+    def open_image(self, reference: ProviderImageReference) -> AbstractAsyncContextManager[ProviderImageStream]:
+        return self._image_downloader.open(reference)
+
     def _submit_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._token}", "X-ModelScope-Async-Mode": "true"}
 
     def _status_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._token}", "X-ModelScope-Task-Type": "image_generation"}
-
-
-def _retry_after(value: str | None) -> int | None:
-    try:
-        parsed = int(value) if value is not None else None
-        return parsed if parsed is not None and parsed >= 0 else None
-    except ValueError:
-        return None

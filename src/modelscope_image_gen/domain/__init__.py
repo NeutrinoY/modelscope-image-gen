@@ -1,6 +1,6 @@
 from .artifacts import GeneratedImage, LocalArtifact, ProviderImageReference
 from .errors import DomainError, ErrorCategory, ErrorCode, ErrorStage
-from .ids import ArtifactKey, ImageId, JobId
+from .ids import ArtifactKey, ImageId, JobId, ProviderName
 from .jobs import GenerationJob, ProviderTaskReference
 from .requests import GenerationRequest, ImageSize
 from .states import ArtifactAggregateStatus, ArtifactStatus, JobStatus
@@ -22,5 +22,6 @@ __all__ = [
     "JobStatus",
     "LocalArtifact",
     "ProviderImageReference",
+    "ProviderName",
     "ProviderTaskReference",
 ]

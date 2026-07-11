@@ -100,7 +100,6 @@ def test_artifact_failure_does_not_change_succeeded_job() -> None:
 def test_available_image_requires_valid_artifact() -> None:
     artifact = LocalArtifact(
         artifact_key=ArtifactKey("job/image.png"),
-        file_path="C:/safe/job/image.png",
         relative_path="job/image.png",
         sha256="a" * 64,
         byte_size=10,
@@ -114,6 +113,21 @@ def test_available_image_requires_valid_artifact() -> None:
         image_id=ImageId.new(), position=0, provider_reference=ProviderImageReference("https://signed/1")
     )
     assert image.mark_available(artifact).artifact_status is ArtifactStatus.AVAILABLE
+
+
+def test_local_artifact_rejects_unsafe_relative_path() -> None:
+    with pytest.raises(ValueError, match="relative_path"):
+        LocalArtifact(
+            artifact_key=ArtifactKey("job/image.png"),
+            relative_path="../outside.png",
+            sha256="a" * 64,
+            byte_size=10,
+            media_type="image/png",
+            format="PNG",
+            width=1,
+            height=1,
+            saved_at=now(),
+        )
 
 
 def test_illegal_transition_is_rejected() -> None:

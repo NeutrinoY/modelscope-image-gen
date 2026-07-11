@@ -14,14 +14,15 @@ class ProviderImageReference:
     provider_request_id: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.locator:
+        locator = self.locator.strip()
+        if not locator:
             raise ValueError("provider image locator must not be empty")
+        object.__setattr__(self, "locator", locator)
 
 
 @dataclass(frozen=True, slots=True)
 class LocalArtifact:
     artifact_key: ArtifactKey
-    file_path: str
     relative_path: str
     sha256: str
     byte_size: int
@@ -34,8 +35,20 @@ class LocalArtifact:
     def __post_init__(self) -> None:
         if self.byte_size <= 0 or self.width <= 0 or self.height <= 0:
             raise ValueError("artifact dimensions and size must be positive")
-        if len(self.sha256) != 64:
-            raise ValueError("sha256 must contain 64 hexadecimal characters")
+        parts = self.relative_path.split("/")
+        if (
+            not self.relative_path
+            or self.relative_path.startswith("/")
+            or "\\" in self.relative_path
+            or any(not part or part in {".", ".."} or ":" in part for part in parts)
+        ):
+            raise ValueError("artifact relative_path must be a canonical safe relative path")
+        if (
+            len(self.sha256) != 64
+            or self.sha256 != self.sha256.lower()
+            or any(c not in "0123456789abcdef" for c in self.sha256)
+        ):
+            raise ValueError("sha256 must contain 64 lowercase hexadecimal characters")
 
 
 @dataclass(frozen=True, slots=True)

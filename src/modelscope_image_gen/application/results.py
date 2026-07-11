@@ -3,18 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from modelscope_image_gen.domain import DomainError, GeneratedImage, GenerationJob
+from modelscope_image_gen.domain import DomainError, GenerationJob, JobId
+
+from .views import GeneratedImageView, JobSummaryView
 
 
-class NextTool(StrEnum):
-    CHECK = "check_image_generation"
-    FETCH = "fetch_image_generation_result"
+class NextStepKind(StrEnum):
+    CHECK = "check"
+    FETCH = "fetch"
 
 
 @dataclass(frozen=True, slots=True)
 class NextStep:
-    tool: NextTool
-    job_id: str
+    kind: NextStepKind
+    job_id: JobId
     recommended_wait_seconds: int | None = None
 
 
@@ -37,7 +39,7 @@ class CheckResult:
 class FetchResult:
     ok: bool
     job: GenerationJob
-    images: tuple[GeneratedImage, ...]
+    images: tuple[GeneratedImageView, ...]
     partial: bool
     error: DomainError | None = None
 
@@ -46,21 +48,15 @@ class FetchResult:
 class GenerateResult:
     ok: bool
     job: GenerationJob | None
-    images: tuple[GeneratedImage, ...]
+    images: tuple[GeneratedImageView, ...]
     completed: bool
     partial: bool
     error: DomainError | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class JobPage:
-    items: tuple[GenerationJob, ...]
-    next_cursor: str | None
-
-
-@dataclass(frozen=True, slots=True)
 class ListResult:
     ok: bool
-    items: tuple[GenerationJob, ...]
+    items: tuple[JobSummaryView, ...]
     next_cursor: str | None
     error: DomainError | None = None

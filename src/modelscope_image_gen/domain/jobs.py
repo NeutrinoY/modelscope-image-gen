@@ -6,7 +6,7 @@ from datetime import datetime
 
 from .artifacts import GeneratedImage, ProviderImageReference
 from .errors import DomainError, ErrorCategory, ErrorCode, ErrorStage
-from .ids import ImageId, JobId
+from .ids import ImageId, JobId, ProviderName
 from .requests import GenerationRequest
 from .states import ArtifactAggregateStatus, ArtifactStatus, JobStatus
 
@@ -16,10 +16,13 @@ class ProviderTaskReference:
     task_id: str
     provider_request_id: str | None = None
     last_provider_status: str | None = None
+    provider: ProviderName = ProviderName.MODELSCOPE
 
     def __post_init__(self) -> None:
-        if not self.task_id:
+        task_id = self.task_id.strip()
+        if not task_id:
             raise ValueError("provider task_id must not be empty")
+        object.__setattr__(self, "task_id", task_id)
 
 
 @dataclass(frozen=True, slots=True)

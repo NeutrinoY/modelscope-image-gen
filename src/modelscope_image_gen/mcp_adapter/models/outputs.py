@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from modelscope_image_gen.domain import ArtifactAggregateStatus, ArtifactStatus, ErrorCategory, ErrorStage, JobStatus
 
@@ -27,11 +27,25 @@ class ErrorOutput(WireModel):
     stage: ErrorStage
     category: ErrorCategory
     retryable: bool
-    retry_after_seconds: int | None
+    retry_after_seconds: int | None = Field(ge=0)
     message: str
     possibly_submitted: bool
     provider_request_id: str | None
     next_action: NextActionOutput | None
+
+
+class ToolOutput(WireModel):
+    ok: bool
+    error: ErrorOutput | None
+
+    @model_validator(mode="after")
+    def validate_envelope(self) -> ToolOutput:
+        data = getattr(self, "data", None)
+        if self.ok and (data is None or self.error is not None):
+            raise ValueError("successful tool output requires data and forbids error")
+        if not self.ok and self.error is None:
+            raise ValueError("failed tool output requires error")
+        return self
 
 
 class JobOutput(WireModel):
@@ -110,31 +124,21 @@ class GenerateData(WireModel):
     partial: bool
 
 
-class SubmitToolOutput(WireModel):
-    ok: bool
+class SubmitToolOutput(ToolOutput):
     data: SubmitData | None
-    error: ErrorOutput | None
 
 
-class CheckToolOutput(WireModel):
-    ok: bool
+class CheckToolOutput(ToolOutput):
     data: CheckData | None
-    error: ErrorOutput | None
 
 
-class FetchToolOutput(WireModel):
-    ok: bool
+class FetchToolOutput(ToolOutput):
     data: FetchData | None
-    error: ErrorOutput | None
 
 
-class ListToolOutput(WireModel):
-    ok: bool
+class ListToolOutput(ToolOutput):
     data: ListData | None
-    error: ErrorOutput | None
 
 
-class GenerateToolOutput(WireModel):
-    ok: bool
+class GenerateToolOutput(ToolOutput):
     data: GenerateData | None
-    error: ErrorOutput | None

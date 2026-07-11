@@ -33,7 +33,12 @@ def delete_relative_job_directory(artifact_root: Path, relative_job_dir: str) ->
         raise ValueError("invalid cleanup path")
     JobId(parts[1])
     root = artifact_root.resolve()
-    candidate = (root / parts[0] / parts[1]).resolve()
+    candidate = root
+    for part in parts:
+        candidate /= part
+        if candidate.exists() and (candidate.is_symlink() or candidate.is_junction()):
+            raise ValueError("cleanup path contains a link or reparse point")
+    candidate = candidate.resolve()
     if not candidate.is_relative_to(root):
         raise ValueError("cleanup path escapes artifact root")
     if candidate.exists():

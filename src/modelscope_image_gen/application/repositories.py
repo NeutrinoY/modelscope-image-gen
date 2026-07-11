@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from modelscope_image_gen.domain import GenerationJob, JobId, JobStatus
+from modelscope_image_gen.domain import DomainError, GenerationJob, JobId, JobStatus
+
+from .views import JobSummaryView
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,8 +23,14 @@ class JobListQuery:
 
 @dataclass(frozen=True, slots=True)
 class StoredJobPage:
-    items: tuple[StoredGenerationJob, ...]
+    items: tuple[JobSummaryView, ...]
     next_cursor: str | None
+
+
+class RepositoryError(Exception):
+    def __init__(self, error: DomainError) -> None:
+        super().__init__(error.safe_message)
+        self.error = error
 
 
 class GenerationJobRepository(Protocol):

@@ -26,4 +26,4 @@ class ListGenerations:
                 occurred_at=self._clock(),
             )
             return ListResult(ok=False, items=(), next_cursor=None, error=error)
-        return ListResult(ok=True, items=tuple(item.job for item in page.items), next_cursor=page.next_cursor)
+        return ListResult(ok=True, items=page.items, next_cursor=page.next_cursor)

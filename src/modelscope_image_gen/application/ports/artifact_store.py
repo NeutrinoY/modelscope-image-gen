@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterable
 from typing import Protocol
 
-from modelscope_image_gen.domain import ImageId, JobId, LocalArtifact, ProviderImageReference
+from modelscope_image_gen.domain import ImageId, JobId, LocalArtifact
 
 
 class ArtifactMaterializationError(Exception):
@@ -12,11 +13,16 @@ class ArtifactMaterializationError(Exception):
 
 
 class ArtifactStore(Protocol):
-    async def materialize(
+    def inspect_existing(self, *, job_id: JobId, image_id: ImageId, position: int) -> LocalArtifact | None: ...
+
+    async def save(
         self,
         *,
         job_id: JobId,
         image_id: ImageId,
         position: int,
-        reference: ProviderImageReference,
+        chunks: AsyncIterable[bytes],
+        content_length: int | None,
     ) -> LocalArtifact: ...
+
+    def resolve_path(self, artifact: LocalArtifact) -> str: ...

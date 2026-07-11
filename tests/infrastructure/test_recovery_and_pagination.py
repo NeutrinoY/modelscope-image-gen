@@ -10,8 +10,7 @@ from modelscope_image_gen.infrastructure.sqlite.repository import SqliteGenerati
 @pytest.mark.anyio
 async def test_startup_recovery_marks_stale_submitting_as_uncertain(tmp_path) -> None:
     database = tmp_path / "state.sqlite3"
-    artifacts = tmp_path / "artifacts"
-    repo = await SqliteGenerationJobRepository.open(database, artifact_root=artifacts)
+    repo = await SqliteGenerationJobRepository.open(database)
     now = datetime(2026, 7, 10, tzinfo=UTC)
     job = GenerationJob.create_submitting(
         job_id=JobId.new(), request=GenerationRequest(prompt="cat", model="m"), now=now
@@ -19,7 +18,7 @@ async def test_startup_recovery_marks_stale_submitting_as_uncertain(tmp_path) ->
     await repo.add(job)
     await repo.close()
 
-    reopened = await SqliteGenerationJobRepository.open(database, artifact_root=artifacts)
+    reopened = await SqliteGenerationJobRepository.open(database)
     try:
         assert await reopened.recover_stale_submitting() == 1
         recovered = await reopened.get(job.job_id)
@@ -33,7 +32,7 @@ async def test_startup_recovery_marks_stale_submitting_as_uncertain(tmp_path) ->
 
 @pytest.mark.anyio
 async def test_list_uses_opaque_keyset_cursor(tmp_path) -> None:
-    repo = await SqliteGenerationJobRepository.open(tmp_path / "state.sqlite3", artifact_root=tmp_path / "artifacts")
+    repo = await SqliteGenerationJobRepository.open(tmp_path / "state.sqlite3")
     try:
         now = datetime(2026, 7, 10, tzinfo=UTC)
         jobs = [
@@ -49,8 +48,9 @@ async def test_list_uses_opaque_keyset_cursor(tmp_path) -> None:
         first = await repo.list(JobListQuery(limit=2))
         second = await repo.list(JobListQuery(limit=2, cursor=first.next_cursor))
         assert len(first.items) == 2
+        assert not hasattr(first.items[0], "job")
         assert first.next_cursor is not None
         assert len(second.items) == 1
-        assert {item.job.job_id for item in first.items}.isdisjoint({item.job.job_id for item in second.items})
+        assert {item.job_id for item in first.items}.isdisjoint({item.job_id for item in second.items})
     finally:
         await repo.close()

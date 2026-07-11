@@ -1,5 +1,7 @@
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
+import anyio
 import pytest
 
 from modelscope_image_gen.application.ports.artifact_store import ArtifactMaterializationError
@@ -26,12 +28,16 @@ NOW = datetime(2026, 7, 10, 12, tzinfo=UTC)
 class Repo:
     def __init__(self, job):
         self.stored = StoredGenerationJob(job, 1)
+        self.save_calls = 0
+        self.saved = anyio.Event()
 
     async def get(self, job_id):
         return self.stored
 
     async def save(self, job, *, expected_revision):
+        self.save_calls += 1
         self.stored = StoredGenerationJob(job, expected_revision + 1)
+        self.saved.set()
         return self.stored
 
 
@@ -40,7 +46,10 @@ class Store:
         self.fail_position = fail_position
         self.calls: list[int] = []
 
-    async def materialize(self, *, job_id, image_id, position, reference):
+    def inspect_existing(self, *, job_id, image_id, position):
+        return None
+
+    async def save(self, *, job_id, image_id, position, chunks, content_length):
         self.calls.append(position)
         if position == self.fail_position:
             raise ArtifactMaterializationError(
@@ -55,7 +64,6 @@ class Store:
             )
         return LocalArtifact(
             artifact_key=ArtifactKey(f"jobs/{job_id}/images/{image_id}"),
-            file_path=f"C:/artifacts/{position}.png",
             relative_path=f"jobs/{job_id}/{position}.png",
             sha256="a" * 64,
             byte_size=10,
@@ -65,6 +73,25 @@ class Store:
             height=1,
             saved_at=NOW,
         )
+
+    def resolve_path(self, artifact):
+        return f"C:/artifacts/{artifact.relative_path}"
+
+
+class Stream:
+    content_length = None
+
+    async def _chunks(self):
+        yield b"image"
+
+    def __aiter__(self):
+        return self._chunks()
+
+
+class Provider:
+    @asynccontextmanager
+    async def open_image(self, reference):
+        yield Stream()
 
 
 def succeeded_job(count: int = 2):
@@ -85,12 +112,15 @@ def succeeded_job(count: int = 2):
 async def test_fetch_allows_partial_success_and_keeps_job_succeeded() -> None:
     repo = Repo(succeeded_job())
     store = Store(fail_position=1)
-    result = await FetchGenerationResult(repo, store, lambda: NOW, max_concurrency=2)(repo.stored.job.job_id)
+    result = await FetchGenerationResult(repo, Provider(), store, lambda: NOW, max_concurrency=2)(
+        repo.stored.job.job_id
+    )
 
     assert result.ok is True
     assert result.partial is True
     assert result.job.status.value == "succeeded"
     assert [image.artifact_status for image in result.images] == [ArtifactStatus.AVAILABLE, ArtifactStatus.FAILED]
+    assert repo.save_calls == 2
 
 
 @pytest.mark.anyio
@@ -98,9 +128,35 @@ async def test_fetch_skips_already_available_images() -> None:
     job = succeeded_job(1)
     first_store = Store()
     repo = Repo(job)
-    first = await FetchGenerationResult(repo, first_store, lambda: NOW, max_concurrency=1)(job.job_id)
+    first = await FetchGenerationResult(repo, Provider(), first_store, lambda: NOW, max_concurrency=1)(job.job_id)
     second_store = Store()
-    second = await FetchGenerationResult(repo, second_store, lambda: NOW, max_concurrency=1)(job.job_id)
+    second = await FetchGenerationResult(repo, Provider(), second_store, lambda: NOW, max_concurrency=1)(job.job_id)
 
     assert first.ok and second.ok
     assert second_store.calls == []
+
+
+@pytest.mark.anyio
+async def test_fetch_cancellation_keeps_an_already_materialized_image_available() -> None:
+    class PartiallyBlockingStore(Store):
+        async def save(self, *, job_id, image_id, position, chunks, content_length):
+            if position == 1:
+                await anyio.sleep_forever()
+            return await super().save(
+                job_id=job_id,
+                image_id=image_id,
+                position=position,
+                chunks=chunks,
+                content_length=content_length,
+            )
+
+    repo = Repo(succeeded_job())
+    use_case = FetchGenerationResult(repo, Provider(), PartiallyBlockingStore(), lambda: NOW, max_concurrency=2)
+
+    async with anyio.create_task_group() as task_group:
+        task_group.start_soon(use_case, repo.stored.job.job_id)
+        await repo.saved.wait()
+        task_group.cancel_scope.cancel()
+
+    assert repo.stored.job.images[0].artifact_status is ArtifactStatus.AVAILABLE
+    assert repo.stored.job.images[1].artifact_status is ArtifactStatus.PENDING

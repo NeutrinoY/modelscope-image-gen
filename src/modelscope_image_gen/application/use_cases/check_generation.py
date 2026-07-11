@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from modelscope_image_gen.application.ports.provider import ImageGenerationProvider
 from modelscope_image_gen.application.ports.system import Clock, ImageIdFactory
 from modelscope_image_gen.application.provider_outcomes import (
@@ -13,6 +15,8 @@ from modelscope_image_gen.application.provider_outcomes import (
 from modelscope_image_gen.application.repositories import GenerationJobRepository
 from modelscope_image_gen.application.results import CheckResult
 from modelscope_image_gen.domain import DomainError, ErrorCategory, ErrorCode, ErrorStage, JobId, JobStatus
+
+logger = logging.getLogger("modelscope-image-gen-mcp")
 
 
 class CheckGeneration:
@@ -43,6 +47,7 @@ class CheckGeneration:
             raise LookupError(error)
         job = stored.job
         if job.status.is_terminal:
+            logger.info("job.status.checked job_id=%s status=%s source=local", job.job_id, job.status.value)
             return CheckResult(ok=True, job=job)
         if job.status is JobStatus.SUBMITTING:
             error = DomainError(
@@ -56,6 +61,11 @@ class CheckGeneration:
             )
             failed = job.mark_submission_failed(error=error, now=self._clock())
             saved = await self._repository.save(failed, expected_revision=stored.revision)
+            logger.warning(
+                "job.submit.uncertain job_id=%s error_code=%s possibly_submitted=true",
+                saved.job.job_id,
+                error.code.value,
+            )
             return CheckResult(ok=False, job=saved.job, error=error)
         assert job.provider_task is not None
         try:
@@ -63,6 +73,12 @@ class CheckGeneration:
         except ProviderTemporaryError as exc:
             updated = job.record_operation_error(error=exc.error, now=self._clock())
             saved = await self._repository.save(updated, expected_revision=stored.revision)
+            logger.warning(
+                "job.status.check_failed job_id=%s error_code=%s retryable=%s",
+                saved.job.job_id,
+                exc.error.code.value,
+                str(exc.error.retryable).lower(),
+            )
             return CheckResult(ok=False, job=saved.job, error=exc.error)
         now = self._clock()
         if isinstance(outcome, ProviderPending):
@@ -104,4 +120,22 @@ class CheckGeneration:
         else:
             raise TypeError(f"unsupported provider outcome: {type(outcome)!r}")
         saved = await self._repository.save(updated, expected_revision=stored.revision)
+        if result_error is None:
+            logger.info(
+                "job.status.checked job_id=%s status=%s source=provider", saved.job.job_id, saved.job.status.value
+            )
+        else:
+            logger.warning(
+                "job.status.check_failed job_id=%s error_code=%s retryable=%s",
+                saved.job.job_id,
+                result_error.code.value,
+                str(result_error.retryable).lower(),
+            )
+        if saved.job.status is not job.status:
+            logger.info(
+                "job.status.changed job_id=%s from_status=%s to_status=%s",
+                saved.job.job_id,
+                job.status.value,
+                saved.job.status.value,
+            )
         return CheckResult(ok=result_error is None, job=saved.job, error=result_error)

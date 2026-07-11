@@ -22,12 +22,15 @@ The release focuses on preserving clear local truth: what was submitted, what Mo
 - Persisted submission intent before contacting ModelScope so process interruption does not silently erase the local record.
 - Added explicit recovery for uncertain submissions and prohibited automatic resubmission when the first request may already have reached ModelScope.
 - Preserved active Job state across temporary network failures, local wait limits, and unknown Provider status values.
+- Mapped SQLite failures and optimistic conflicts to stable persistence reason codes instead of generic internal errors.
 
 ### Artifact delivery
 
 - Replaced Agent-controlled output directories and filenames with a Server-controlled local Artifact Store.
 - Added streaming download limits, image validation, pixel limits, SHA-256 metadata, atomic file commits, and safe path derivation.
+- Kept image HTTP response lifecycles in the ModelScope Provider while the Artifact Store consumes provider-neutral bytes.
 - Made available artifacts idempotent: repeated fetch calls return existing files instead of downloading or overwriting them again.
+- Persisted each multi-image fetch result in its own short transaction so completed images survive sibling cancellation.
 - Kept formal Job data and generated images outside package and `uvx` environments so upgrades do not remove user artifacts.
 
 ### MCP and Agent experience
@@ -36,6 +39,7 @@ The release focuses on preserving clear local truth: what was submitted, what Mo
 - Added concrete Pydantic input and output contracts for every tool.
 - Standardized structured `ok/data/error` envelopes and concise TextContent summaries.
 - Added strong next actions for check and fetch handoff, retry timing, and uncertain-submission warnings.
+- Enforced the blocking wait budget across status checks and artifact fetching, and rejected malformed Provider image lists.
 - Kept Provider image locators, prompts, raw upstream bodies, and internal exceptions out of normal MCP text responses.
 
 ### Compatibility changes

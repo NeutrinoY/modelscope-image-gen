@@ -39,6 +39,7 @@ def test_settings_load_env_local_and_new_default_model(tmp_path, monkeypatch) ->
     from modelscope_image_gen.infrastructure.config.settings import Settings
 
     (tmp_path / ".env.local").write_text("MODELSCOPE_SDK_TOKEN=test-local-token\n", encoding="utf-8")
+    monkeypatch.delenv("MODELSCOPE_SDK_TOKEN", raising=False)
     monkeypatch.chdir(tmp_path)
     settings = Settings()
     assert settings.default_model == "krea/Krea-2-Turbo"

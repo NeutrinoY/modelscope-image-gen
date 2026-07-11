@@ -54,6 +54,9 @@ class Provider:
         self.calls = 0
         self.repo: MemoryRepository | None = None
 
+    def validate(self, request):
+        return None
+
     async def submit(self, request):
         self.calls += 1
         assert self.repo is not None

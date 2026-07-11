@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -7,9 +8,12 @@ from datetime import UTC, datetime
 import mcp_types
 from pydantic import BaseModel, ValidationError
 
+from modelscope_image_gen.application.repositories import RepositoryError
 from modelscope_image_gen.domain import DomainError, ErrorCategory, ErrorCode, ErrorStage
 from modelscope_image_gen.mcp_adapter.mapping import error_output
 from modelscope_image_gen.mcp_adapter.presenters.common import present
+
+logger = logging.getLogger("modelscope-image-gen-mcp")
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +52,10 @@ class ToolContract[InputT: BaseModel, OutputT: BaseModel]:
                     occurred_at=datetime.now(UTC),
                 )
             )
+        except RepositoryError as exc:
+            output = self._error_result(exc.error)
         except Exception:
+            logger.error("tool.internal_error tool=%s", self.name)
             output = self._error_result(
                 DomainError(
                     code=ErrorCode.INTERNAL_ERROR,

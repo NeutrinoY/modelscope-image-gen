@@ -620,7 +620,7 @@ uv run pytest -m live
 |---|---|
 | Ruff format / lint | 已通过 |
 | ty 类型检查 | 已通过 |
-| 自动化测试 | 30 passed，1 个显式 live 测试默认跳过 |
+| 自动化测试 | 39 passed，1 个显式 live 测试默认跳过 |
 | 官方 MCP 内存 Client | 已通过 |
 | 隔离 wheel 安装 | 已通过 |
 | 真实 stdio 子进程 | 已通过 |

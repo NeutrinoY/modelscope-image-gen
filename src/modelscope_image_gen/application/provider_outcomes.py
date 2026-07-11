@@ -65,3 +65,9 @@ class ProviderTemporaryError(Exception):
     def __init__(self, error: DomainError) -> None:
         super().__init__(error.safe_message)
         self.error = error
+
+
+class ProviderImageError(Exception):
+    def __init__(self, error: DomainError) -> None:
+        super().__init__(error.safe_message)
+        self.error = error
