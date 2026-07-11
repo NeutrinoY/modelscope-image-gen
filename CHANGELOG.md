@@ -23,7 +23,7 @@ The current source tree targets `0.2.1`. Until a `v0.2.1` tag is created, these 
 - Made GitHub source installation through `uvx --from git+https://...` the documented user path; local source checkout remains the development path.
 - Deferred PyPI, TestPyPI, MCP Registry, and GitHub Release work until an independent distribution channel is justified.
 - Removed the unpublished `server.json` manifest because it referenced a PyPI distribution owned by another project.
-- Updated CI to current `actions/checkout@v7` and `astral-sh/setup-uv@v8`, with read-only checkout, duplicate-run cancellation, and job time limits.
+- Updated CI to `actions/checkout@v7` and the current resolvable `astral-sh/setup-uv@v8.3.2` release, with read-only checkout, duplicate-run cancellation, and job time limits.
 
 ### Security
 
